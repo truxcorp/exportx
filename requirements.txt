@@ -1,0 +1,34 @@
+Ci joint le script utilisé actuellement en version 1.2
+
+Fonctionnalités supplémentaires attendues :
+
+– Création de la base de l’arborescence : 
+	annee/mois/jour
+
+– Création d’un prompt sous la forme d’une fenêtre modale pour déterminer le nom_spécifique :
+	annee/mois/jour/nom_specifique
+
+– Création d’un prompt sous la forme d’une fenêtre modale 
+pour déterminer la racine des noms de fichiers à numéroter
+
+– Dans le cas où le programme trouve des fichiers avec un ou plusieurs autres suffixes que «  CR2" ou «  jpg » actuellement pris en compte, prévoir de créer automatiquement un ou plusieurs dossiers portant le nom de ce(s) suffixe(s)
+
+Si un ou plusieurs de ces suffixes concernent des formats de fichiers renvoyant à la video, prévoir de créer une arborescence parallèle à l’intérieur du dossier « o »  comme originaux,  dont le dossier racine relatif serait « v » comme video… -> o/v/mov/ ou o/v/mpg4 par exemple
+
+ Une fois les fichiers renommées et placés dans les dossiers correspondant à leur suffixe créer une arborescence vide dans la’attente du déport des fichier corrigés de la forme suivante : 
+—> s/1/jpg pour les fichiers images fixes et s/1/mov pour les fichiers vidéos
+
+	Arborescence cible
+
+		annee/mois/jour/nom_specifique/p/o/cr2
+		annee/mois/jour/nom_specifique/p/o/jpg
+		…
+		annee/mois/jour/nom_specifique/p/s/1/jpg
+		…
+		annee/mois/jour/nom_specifique/v/s/o/mov
+		annee/mois/jour/nom_specifique/v/s/o/mp4
+		…
+		annee/mois/jour/nom_specifique/v/s/1/mp4
+		annee/mois/jour/nom_specifique/v/s/1/mov
+		…
+
