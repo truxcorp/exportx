@@ -21,6 +21,30 @@
 #         ./ExportPro.command [folder]
 # Env:    EXPORTPRO_NO_GUI=1   ask questions in the terminal, not in dialogs.
 
+# zsh is the default shell on macOS since 10.15 (and on every Apple Silicon
+# Mac). Double-clicking or ./ExportPro.command uses the bash line above, but
+# "zsh ExportPro.command", "sh ExportPro.command" or "source ExportPro.command"
+# would run this file in another shell or mode. Hand it to /bin/bash instead.
+# Kept to syntax that zsh, sh and bash all parse.
+if [ -z "$BASH_VERSION" ]; then
+    _bash=/bin/bash
+    [ -x "$_bash" ] || _bash=bash
+    # zsh sets $0 to this file, also when sourced. A sourced script must not
+    # exec or exit: that would close the user's terminal.
+    case "$ZSH_EVAL_CONTEXT" in
+    *:file*)
+        "$_bash" "$0" "$@"
+        return $?
+        ;;
+    esac
+    exec "$_bash" "$0" "$@"
+fi
+if [ "${BASH_SOURCE[0]}" != "$0" ]; then # sourced from bash
+    "$BASH" "${BASH_SOURCE[0]}" "$@"
+    return $?
+fi
+set +o posix # "sh ExportPro.command": macOS /bin/sh is bash in POSIX mode
+
 VERSION="0.2.0"
 DEFAULT_PREFIX="txo"
 # Lower-case extensions treated as video (goes to v/ instead of p/).

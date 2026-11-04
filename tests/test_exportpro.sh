@@ -144,5 +144,23 @@ printf '%s\n' "$(printf '%s' "$s" | sed 's/ /\\ /g') " "s8" "x" "o" |
 	bash "$script" >"$tmp/out" 2>&1
 check "drag & drop path" has "$s/2023/03/03/s8/p/o/jpg/x_1.jpg" z.jpg
 
+# --- 9. started from zsh (macOS default shell), sh, or sourced ---------------
+# Each way must still run in bash and, when sourced, give the shell back.
+# shellcheck disable=SC2016 # $1 expands in the inner shell
+for how in "zsh" "sh" "zsh -c" "bash -c"; do
+    case "$how" in zsh | sh) command -v "$how" >/dev/null 2>&1 || continue ;; esac
+    case "$how" in "zsh -c") command -v zsh >/dev/null 2>&1 || continue ;; esac
+    s="$tmp/t9 $how"
+    mk "$s" 202404041000 a.jpg b.CR2 b.JPG
+    case "$how" in
+    *-c) printf 'via\nx\no\n' | $how 'source "$1" "$2"; echo "shell still here: $?"' _ "$script" "$s" >"$tmp/out" 2>&1 ;;
+    *) printf 'via\nx\no\n' | $how "$script" "$s" >"$tmp/out" 2>&1 ;;
+    esac
+    D="$s/2024/04/04/via"
+    check "$how: pair" has "$D/p/o/cr2/x_2.cr2" b.CR2
+    check "$how: single" has "$D/p/o/jpg/x_1.jpg" a.jpg
+    case "$how" in *-c) check "$how: source returns" grep -q "shell still here: 0" "$tmp/out" ;; esac
+done
+
 printf '\n%d passed, %d failed (%s)\n' "$pass" "$fail" "$(bash --version | head -1)"
 [ "$fail" -eq 0 ]
