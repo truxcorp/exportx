@@ -1,50 +1,57 @@
 # ExportPro
 
-Sorts and renames camera photos and videos into:
+*[English version](README.en.md)*
+
+Trie et renomme les photos et vidéos d'un appareil photo dans :
 
 ```
-<folder>/YYYY/MM/DD/<shoot name>/p/o/<ext>/     photo originals (cr2, jpg, xmp, ...)
-<folder>/YYYY/MM/DD/<shoot name>/p/s/1/jpg/     empty, for corrected photos
-<folder>/YYYY/MM/DD/<shoot name>/v/o/<ext>/     video originals (mov, mp4, ...)
-<folder>/YYYY/MM/DD/<shoot name>/v/s/1/<ext>/   empty, one per video type found
+<dossier>/AAAA/MM/JJ/<nom de séance>/p/o/<ext>/     originaux photo (cr2, jpg, xmp, ...)
+<dossier>/AAAA/MM/JJ/<nom de séance>/p/s/1/jpg/     vide, pour les photos retouchées
+<dossier>/AAAA/MM/JJ/<nom de séance>/v/o/<ext>/     originaux vidéo (mov, mp4, ...)
+<dossier>/AAAA/MM/JJ/<nom de séance>/v/s/1/<ext>/   vide, un par type de vidéo trouvé
 ```
 
-Files become `<prefix>_<n>.<ext>`. Files with the same base name (`IMG_1.CR2` + `IMG_1.JPG`,
-`MVI_1.MOV` + `MVI_1.THM`) get the same number. Numbering follows shooting time. If the shoot
-folder already has files, numbering carries on after them. The date is the earliest file's date.
-Every rename is written to `exportpro.log` in the shoot folder.
+Les fichiers deviennent `<préfixe>_<n>.<ext>`. Les fichiers qui ont le même nom de base
+(`IMG_1.CR2` + `IMG_1.JPG`, `MVI_1.MOV` + `MVI_1.THM`) reçoivent le même numéro. La numérotation
+suit l'heure de prise de vue. Si le dossier de séance contient déjà des fichiers, la numérotation
+reprend à la suite. La date est celle du fichier le plus ancien. Chaque renommage est consigné
+dans `exportpro.log`, dans le dossier de séance.
 
-## Running it on a Mac
+## Utilisation sur Mac
 
-1. Copy `ExportPro.command` to the Mac. If the file has lost its execute bit, run
-   `chmod +x ExportPro.command` once.
-2. Double-click it. A Terminal window opens, followed by dialogs that ask for the folder, the
-   shoot name and the file prefix (`txo` by default). A last dialog asks you to confirm.
-3. The first time, macOS may block the file because it was downloaded. On macOS 14 and earlier,
-   right-click it, choose *Open*, then click *Open* again. On macOS 15 and later, double-click
-   it once, then go to *System Settings > Privacy & Security* and click *Open Anyway*. You can
-   also run `xattr -d com.apple.quarantine ExportPro.command` in Terminal.
-4. If the photos are on an SD card or in Desktop/Documents, macOS may ask whether Terminal may
-   access them. Click *Allow*, or the folder will look empty.
+1. Copiez `ExportPro.command` sur le Mac. Si le fichier a perdu son droit d'exécution, lancez
+   une fois `chmod +x ExportPro.command`.
+2. Double-cliquez dessus. Une fenêtre Terminal s'ouvre, puis des boîtes de dialogue demandent le
+   dossier, le nom de la séance et le préfixe des fichiers (`txo` par défaut). Une dernière
+   boîte de dialogue demande confirmation.
+3. La première fois, macOS peut bloquer le fichier parce qu'il a été téléchargé. Sous macOS 14
+   et antérieur, faites un clic droit dessus, choisissez *Ouvrir*, puis cliquez de nouveau sur
+   *Ouvrir*. Sous macOS 15 et ultérieur, double-cliquez une fois dessus, puis allez dans
+   *Réglages Système > Confidentialité et sécurité* et cliquez sur *Ouvrir quand même*. Vous
+   pouvez aussi lancer `xattr -d com.apple.quarantine ExportPro.command` dans Terminal.
+4. Si les photos sont sur une carte SD ou dans Bureau/Documents, macOS peut demander si Terminal
+   a le droit d'y accéder. Cliquez sur *Autoriser*, sinon le dossier paraîtra vide.
 
-From a terminal you can also run `./ExportPro.command /path/to/folder`. Set
-`EXPORTPRO_NO_GUI=1` to get questions in the terminal instead of dialogs.
+Depuis un terminal, vous pouvez aussi lancer `./ExportPro.command /chemin/vers/dossier`.
+Définissez `EXPORTPRO_NO_GUI=1` pour que les questions soient posées dans le terminal plutôt
+que dans des boîtes de dialogue.
 
-### zsh and Apple Silicon
+### zsh et Apple Silicon
 
-zsh has been the default shell since macOS 10.15 and is the only default on M1 to M5 Macs. That
-does not matter here: the script always runs in `/bin/bash` 3.2, which every Mac still ships.
-Double-click, `./ExportPro.command`, `zsh ExportPro.command`, `sh ExportPro.command` and
-`source ExportPro.command` all hand the work to bash. When sourced, the script returns to your
-shell instead of closing the Terminal window. Nothing depends on the CPU, so Rosetta is not
-needed.
+zsh est le shell par défaut depuis macOS 10.15, et le seul par défaut sur les Mac M1 à M5. Cela
+n'a pas d'importance ici : le script s'exécute toujours dans `/bin/bash` 3.2, que tous les Mac
+fournissent encore. Double-clic, `./ExportPro.command`, `zsh ExportPro.command`,
+`sh ExportPro.command` et `source ExportPro.command` confient tous le travail à bash. Quand il
+est sourcé, le script rend la main à votre shell au lieu de fermer la fenêtre Terminal. Rien ne
+dépend du processeur, Rosetta n'est donc pas nécessaire.
 
-## Why plain bash
+## Pourquoi du bash pur
 
-`/bin/bash` 3.2 and `osascript` come with every macOS from 10.5 (2007) to today, on both Intel
-and Apple Silicon. Python was removed in macOS 12.3. A compiled C or Rust binary would need a
-universal build, plus signing or a Gatekeeper workaround. This script uses only the stock tools
-(`stat`, `date`, `find`, `sort`, `awk`, `mv`, `xattr`).
+`/bin/bash` 3.2 et `osascript` sont fournis avec toutes les versions de macOS, de 10.5 (2007) à
+aujourd'hui, sur Intel comme sur Apple Silicon. Python a été retiré dans macOS 12.3. Un binaire
+compilé en C ou en Rust demanderait une compilation universelle, ainsi qu'une signature ou un
+contournement de Gatekeeper. Ce script n'utilise que les outils de base (`stat`, `date`, `find`,
+`sort`, `awk`, `mv`, `xattr`).
 
 ## Tests
 
