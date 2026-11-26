@@ -1,0 +1,49 @@
+{
+  "version": "5.1.0",
+  "modules": {
+    "git": {
+      "files": {
+        ".claude/hooks/guard.sh": "af9aed3960e97495dfb89464efaa1c7bbd05f5166cf5f782d4669068623ce7bb",
+        ".claude/skills/workflow-git/SKILL.md": "1e761917aa1b1d860ac7655cd0d29f72db1e335276afbb709794f525c90cf9bc"
+      },
+      "permissions": {
+        "deny": [
+          "Read(.env)",
+          "Read(.env.*)",
+          "Read(!.env.example)",
+          "Edit(.env)",
+          "Edit(.env.*)",
+          "Edit(!.env.example)",
+          "Read(**/*.pem)",
+          "Read(**/*.key)",
+          "Bash(git push --force *)",
+          "Bash(git push -f *)",
+          "Bash(git push * main)",
+          "Bash(git push * master)",
+          "Bash(git push * --delete *)",
+          "Bash(printenv *)",
+          "Bash(env)",
+          "Bash(gh auth token*)",
+          "Bash(gh secret *)"
+        ],
+        "ask": [
+          "Bash(git tag *)",
+          "Bash(gh release *)"
+        ]
+      },
+      "bypass_setting": true,
+      "hook": true,
+      "rules_import": "CLAUDE.md"
+    },
+    "tdd": {
+      "files": {
+        ".claude/skills/workflow-feature/SKILL.md": "7517afeef2783f9a5de1a71b6f00054710fd4a667fab0119e13d782ac2233bf2",
+        ".claude/skills/workflow-feature/verify-tdd.sh": "f632b96b9f828c38178f6419aad167fe7e10306a3e4947e53c72dbacd1ac660f"
+      },
+      "permissions": {
+        "deny": [],
+        "ask": []
+      }
+    }
+  }
+}

@@ -1,0 +1,38 @@
+workflow_version: 5.1.0
+modules: [git, tdd]
+
+project:                       # AI agents: ask the human for any empty value; never invent.
+  name:                        # e.g. my-app
+  default_branch: main         # the trunk: branch from it, open PRs into it, CI checks PRs into it
+  protected_branches: [main]   # agents never push to these directly (one line, [a, b]); main and the trunk are always protected
+  rules_import: CLAUDE.md      # file that loads the kit rules; CLAUDE.local.md (gitignored) keeps the rules text personal, settings and hooks stay shared
+  adr_path: docs/adr/          # architecture decision records
+
+commands:                      # single entry points; CI and humans call these, nothing else
+  lint:        make lint
+  typecheck:   make typecheck
+  unit:        make test-unit
+
+commit_style: conventional-commits
+versioning: semver
+
+review:
+  auto: true                   # agents run /code-review on substantial PRs before merging; false: they only suggest it
+  min_lines: 200               # changed lines (docs and lockfiles excluded) that make a PR substantial
+
+# HUMAN ONLY. Agents never change this block unless the human asks in the current session.
+# Re-run /workflow-kit after changing it: the installer applies it to .claude/settings.json.
+approvals:
+  standing_merge: true         # agents squash-merge their green PRs and delete the branches without a per-PR "GO"; false: each merge needs "GO"
+  allow_bypass_mode: false     # true: the installer doesn't disable bypass-permissions mode (deny rules and the guard hook still apply in it)
+
+# HUMAN ONLY. Agents never change this block unless the human asks in the current session.
+tdd:
+  enabled: true                # false: tests are still required, but may be written after the code
+  # Paths that need no tests (plumbing, docs, dependency files): verify-tdd.sh warns when
+  # a ci/build/chore commit touches anything else. Edit for your stack; empty: no warning.
+  exempt: '^(\.github|\.githooks|infra|deploy|scripts|docs|secrets)/|^\.[^/]+$|\.md$|(^|/)(Makefile[^/]*|[^/]*\.mk|Dockerfile|Containerfile|package\.json|go\.(mod|sum)|[^/]*\.lock|[^/]*-lock\.(json|yaml))$'
+
+tests:
+  regex: '(^|/)(tests?|__tests__|e2e|spec)/|\.(test|spec)\.[[:alnum:]]+$|_test\.[[:alnum:]]+$'   # what counts as a test file
+  containers: podman           # integration tests run real dependencies in containers
