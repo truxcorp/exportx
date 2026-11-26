@@ -44,6 +44,23 @@
         "deny": [],
         "ask": []
       }
+    },
+    "ci": {
+      "files": {
+        ".claude/skills/workflow-ci-setup/SKILL.md": "fa5958c54cb2092b8cccd6f52d02c66a036fd1bd8d7c20be4d7ef52df1222d5d",
+        ".claude/skills/workflow-ci-setup/templates/Makefile": "97b212846ca0d9d2a5638ba9ffc56ede848e6a2bcb3d2b3900660a41bffc168b",
+        ".claude/skills/workflow-ci-setup/templates/check-migrations.sh": "a0b9ac0c9d6234e35d227c63cd12d8b589f17b7f1eea5480e43f75475f62aa42",
+        ".claude/skills/workflow-ci-setup/templates/dependabot.yml": "154cf71ad9a005917bd2d248c8cdcc5add827125400782ce52719dd80ee6cbd4",
+        ".claude/skills/workflow-ci-setup/templates/githooks/pre-commit": "fc005ec16810e8881ac7864279727f96971118f4310c71bff95a4a626ab68336",
+        ".claude/skills/workflow-ci-setup/templates/githooks/pre-push": "573699b2e30bae9f23c2a2f22ee13ca115cb9e670c3a98db65d794db7a59feeb",
+        ".claude/skills/workflow-ci-setup/templates/pin-actions.sh": "1c295eee1875c153f417c9c88efce6029a61a592ebe29f7d54f62f01d3909485",
+        ".claude/skills/workflow-ci-setup/templates/pr.yml": "4f377aef0c085632377246c21b3f61f4ad5f967b2360eabc78f97696abfa5ad7",
+        ".claude/skills/workflow-ci-setup/templates/security.yml": "204b03cda450bfb908d49ff45ca08deeb359aebc663773854677be8cd2978971"
+      },
+      "permissions": {
+        "deny": [],
+        "ask": []
+      }
     }
   }
 }

@@ -1,0 +1,48 @@
+name: pr
+# The only PR workflow. Every job has timeout-minutes: GitHub's default is 6 h, and a stuck
+# job on a single self-hosted runner blocks everything for that long.
+on:
+  pull_request:
+    paths-ignore: ["**/*.md", "docs/**"]
+permissions:
+  contents: read
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+# No secrets in this workflow.
+jobs:
+  changes:
+    runs-on: ${{ fromJSON(vars.RUNNER_LABELS || '"ubuntu-latest"') }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read   # paths-filter lists PR files through the API
+    outputs:
+      integration: ${{ steps.filter.outputs.integration }}
+    steps:
+      - uses: actions/checkout@PIN # v4
+      - id: filter
+        uses: dorny/paths-filter@PIN # v3
+        with:
+          filters: |
+            integration:
+              - 'src/**'          # EDIT: paths whose changes need integration tests
+              - 'db/**'
+  checks:
+    runs-on: ${{ fromJSON(vars.RUNNER_LABELS || '"ubuntu-latest"') }}
+    timeout-minutes: 20             # EDIT: a little above the usual duration
+    env:
+      BASE_REF: ${{ github.base_ref }}
+    steps:
+      - uses: actions/checkout@PIN # v4
+      - name: Fetch the base branch (checks that compare with it, e.g. migrations-check)
+        run: git fetch --no-tags --depth=1 origin "$BASE_REF:refs/remotes/origin/$BASE_REF"
+      - run: make lint typecheck test-unit security
+  integration:
+    needs: changes
+    if: needs.changes.outputs.integration == 'true'
+    runs-on: ${{ fromJSON(vars.RUNNER_LABELS || '"ubuntu-latest"') }}
+    timeout-minutes: 30             # EDIT: a little above the usual duration
+    steps:
+      - uses: actions/checkout@PIN # v4
+      - run: make test-integration   # EDIT: only the packages that need the dependency

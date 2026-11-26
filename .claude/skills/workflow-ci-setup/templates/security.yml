@@ -1,0 +1,19 @@
+name: security
+# New CVEs land on unchanged code: scan weekly and on demand. PRs already run
+# `make security` in pr.yml.
+on:
+  schedule:
+    - cron: "23 4 * * 1"   # Mondays, UTC, off the hour
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: security
+  cancel-in-progress: true
+jobs:
+  security:
+    runs-on: ${{ fromJSON(vars.RUNNER_LABELS || '"ubuntu-latest"') }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@PIN # v4
+      - run: make security   # EDIT: add dependency audits the toolchain offers (npm audit, govulncheck, …)

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Installed as .githooks/pre-push; `make hooks` enables it. Soft: `--no-verify` skips it.
+# The local checks from .workflow.yml (commands.lint, typecheck, unit) before a branch
+# push. Pushes of only tags or deletions skip them.
+set -euo pipefail
+zero=0000000000000000000000000000000000000000
+run=0
+while read -r _ local_sha remote_ref _; do
+  case "$remote_ref" in
+    refs/tags/*) ;;
+    *) [ "$local_sha" = "$zero" ] || run=1 ;;
+  esac
+done
+[ "$run" -eq 1 ] || exit 0
+exec make lint typecheck test-unit   # EDIT: if .workflow.yml's commands differ
