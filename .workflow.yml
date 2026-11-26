@@ -38,7 +38,7 @@ tests:
   containers: podman           # integration tests run real dependencies in containers
 
 ci:                            # read by workflow-ci-setup
-  runner_labels: '["ubuntu-26.04"]'                  # JSON; stored in repo variable RUNNER_LABELS
-  runner_fallback: '"ubuntu-latest"'                  # JSON; used when the self-hosted runner is offline
+  runner_labels: '["self-hosted","linux"]'          # JSON; stored in repo variable RUNNER_LABELS
+  runner_fallback: '"ubuntu-26.04"'                   # JSON; used when the self-hosted runner is offline
   integration: make test-integration                  # entry point for integration tests
   security: make security                             # entry point for security scans
