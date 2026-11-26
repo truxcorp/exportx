@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Tests for the project's exceptions in .claude/hooks/guard.sh:
-# - a push is judged on the repo it targets (cd <dir> / git -C <dir>), not the session's;
-# - repos listed in project.direct_push_remotes (merged .workflow.yml only) may be pushed
-#   to their main branch directly (e.g. the notes vault).
+# - `git -C <dir> push` is judged on <dir>'s repo (it used to skip every push rule);
+# - repos whose push URL is listed in project.direct_push_remotes (merged .workflow.yml
+#   only, never the session's own remote) may be pushed to main with `git -C <dir> push`;
+# - anything the guard can't resolve exactly (cd away, several -C, -c, detached HEAD,
+#   URL rewrites) gets no exception.
 # Usage: bash tests/test_guard.sh
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -31,6 +33,25 @@ mkrepo "$tmp/vault" main https://github.com/SimonTrux/ObsiOne.git
 mkrepo "$tmp/vault-ssh" main git@github.com:SimonTrux/ObsiOne.git
 mkrepo "$tmp/other" main https://github.com/x/other.git
 mkrepo "$tmp/feature" feat/x https://github.com/x/feature.git
+mkrepo "$tmp/vault-case" main https://github.com/simontrux/obsione.git
+mkrepo "$tmp/vault-port" main ssh://git@github.com:22/SimonTrux/ObsiOne.git
+mkrepo "$tmp/vault-pushurl" main https://github.com/SimonTrux/ObsiOne.git
+git -C "$tmp/vault-pushurl" remote set-url --push origin https://github.com/truxcorp/exportPro.git
+mkrepo "$tmp/vault-pushdefault" main https://github.com/SimonTrux/ObsiOne.git
+git -C "$tmp/vault-pushdefault" remote add up https://github.com/truxcorp/exportPro.git
+git -C "$tmp/vault-pushdefault" config remote.pushDefault up
+mkrepo "$tmp/vault-insteadof" main https://github.com/SimonTrux/ObsiOne.git
+git -C "$tmp/vault-insteadof" config url.https://github.com/truxcorp/exportPro.git.pushInsteadOf https://github.com/SimonTrux/ObsiOne.git
+mkrepo "$tmp/vault-detached" main https://github.com/SimonTrux/ObsiOne.git
+git -C "$tmp/vault-detached" checkout -q --detach
+
+# A session whose merged config (spoofed) lists its own remote.
+own="$tmp/own"
+mkrepo "$own" main https://github.com/truxcorp/exportPro.git
+printf 'project:\n  name: demo\n  direct_push_remotes: [github.com/truxcorp/exportPro]\n' >"$own/.workflow.yml"
+git -C "$own" add .workflow.yml
+git -C "$own" -c user.name=t -c user.email=t@t commit -q -m cfg
+git -C "$own" update-ref refs/remotes/origin/main HEAD
 
 # A session whose vault entry exists only in the working tree, not on origin/main.
 local_only="$tmp/local-only"
@@ -58,7 +79,7 @@ check() { # check <session dir> <command> <allow|block>
 
 check "$session" "git push" block
 check "$session" "git push origin main" block
-check "$session" "cd $tmp/vault && git pull --rebase && git push" allow
+check "$session" "cd $tmp/vault && git pull --rebase && git push" block
 check "$session" "git -C $tmp/vault push" allow
 check "$session" "git -C $tmp/vault-ssh push origin main" allow
 check "$session" "git -C $tmp/vault push --force" block
@@ -68,6 +89,21 @@ check "$session" "cd $tmp/other && git push" block
 check "$session" "cd $tmp/vault && cd $tmp/other && git push" block
 check "$session" "git -C $tmp/feature push" allow
 check "$local_only" "git -C $tmp/vault push" block
+check "$session" "git -C $tmp/vault-case push" allow
+check "$session" "git -C $tmp/vault-port push" allow
+check "$session" "git -C $tmp/vault-pushurl push origin main" block
+check "$session" "git -C $tmp/vault -c remote.origin.pushurl=https://github.com/truxcorp/exportPro.git push origin main" block
+check "$session" "git -C $tmp/vault push --repo=https://github.com/truxcorp/exportPro.git" block
+check "$session" "git -C $tmp/vault-pushdefault push" block
+check "$session" "git -C $tmp/vault-insteadof push" block
+check "$session" "git -C $tmp/vault-detached push" block
+check "$session" "git -C $tmp/vault -C ../session push" block
+check "$session" "cd /nonexistent || git push" block
+check "$session" 'git -C "$PWD" push' block
+check "$session" "false && cd $tmp/vault; git push" block
+check "$session" "cd $tmp/vault | cat; git push" block
+check "$own" "git push origin main" block
+check "$own" "git -C $own push origin main" block
 
 printf '%d ok, %d failed\n' "$ok_n" "$fail_n"
 [ "$fail_n" -eq 0 ]
