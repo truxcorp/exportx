@@ -48,6 +48,21 @@ for c in "$cfg_local" "$cfg_merged"; do
   protected+=" $(project_val default_branch "$c") $(project_val protected_branches "$c" | tr -d '[]"'"'"'' | tr ',' ' ') "
 done
 protected=$(tr -s ' ' <<<"$protected")
+# Project exception: repos whose remote is listed in project.direct_push_remotes (e.g. a
+# notes vault) may be pushed to their protected branch directly. Read from the merged
+# config only, so a local edit can't add an exception.
+direct_ok=" $(project_val direct_push_remotes "$cfg_merged" | tr -d '[]"'"'"'' | tr ',' ' ') "
+norm_remote() { # https://host/o/r.git, git@host:o/r.git -> host/o/r
+  sed -E 's#^[a-z+]+://##; s#^[^@/]+@##; s#^([^/:]+):#\1/#; s#\.git/?$##; s#/$##' <<<"$1"
+}
+resolve_dir() { # resolve_dir <base> <path>: absolute path, ~ expanded, quotes removed
+  local d=$2
+  d=${d#[\"\']}; d=${d%[\"\']}
+  # shellcheck disable=SC2088 # literal ~ in the command text, expanded by hand
+  case "$d" in "~") d=$HOME ;; "~/"*) d="$HOME/${d#\~/}" ;; /*) ;; *) d="$1/$d" ;; esac
+  printf '%s' "$d"
+}
+cur_dir=${cwd:-$PWD}
 is_protected() { [[ "$protected" == *" $1 "* ]]; }
 export GUARD_BRANCH="$branch" GUARD_CWD="$cwd" GUARD_CMD="$cmd"
 need_ask=""
@@ -63,9 +78,22 @@ while IFS= read -r seg; do
   seg=$(sed -E 's/^[[:space:]]+//' <<<"$seg")
   [ -n "$seg" ] || continue
 
-  # 1. git push rules.
-  if grep -Eq '^(sudo[[:space:]]+)?git([[:space:]]+-[^[:space:]]+)*[[:space:]]+push([[:space:]]|$)' <<<"$seg"; then
-    args=" ${seg#*push} "
+  # 0. cd changes the repo later segments act on (cd <vault> && git push).
+  if [[ "$seg" =~ ^cd([[:space:]]+([^[:space:]]+))?[[:space:]]*$ ]]; then
+    cur_dir=$(resolve_dir "$cur_dir" "${BASH_REMATCH[2]:-~}")
+    branch=$(git -C "$cur_dir" branch --show-current 2>/dev/null || true)
+    continue
+  fi
+
+  # 1. git push rules, judged on the repo the push targets (cd, git -C).
+  if [[ "$seg" =~ ^(sudo[[:space:]]+)?git(([[:space:]]+-[Cc][[:space:]]+[^[:space:]]+|[[:space:]]+-[^[:space:]]+)*)[[:space:]]+push([[:space:]].*)?$ ]]; then
+    gopts=${BASH_REMATCH[2]}
+    args=" ${BASH_REMATCH[4]} "
+    tdir=$cur_dir tbranch=$branch
+    if [[ "$gopts" =~ -C[[:space:]]+([^[:space:]]+) ]]; then
+      tdir=$(resolve_dir "$cur_dir" "${BASH_REMATCH[1]}")
+      tbranch=$(git -C "$tdir" branch --show-current 2>/dev/null || true)
+    fi
     is_tag=0
     grep -Eq '[[:space:]](--tags|refs/tags/[^[:space:]]+|v[0-9]+\.[0-9]+\.[0-9]+)[[:space:]]' <<<"$args" && is_tag=1
     # 1a. Force push: only --force-with-lease, never to a protected branch or tags.
@@ -95,10 +123,13 @@ while IFS= read -r seg; do
     elif [ $is_tag -eq 0 ]; then targets=(HEAD)
     else targets=()
     fi
+    remote=${pos[0]:-origin}
+    url=$(git -C "$tdir" remote get-url "$remote" 2>/dev/null || printf '%s' "$remote")
+    [[ "$direct_ok" == *" $(norm_remote "$url") "* ]] && targets=()
     for t in "${targets[@]}"; do
       t=${t#+}
       [[ "$t" == *:* ]] && t=${t#*:}
-      [ "$t" = HEAD ] && t=$branch
+      [ "$t" = HEAD ] && t=$tbranch
       t=${t#refs/heads/}
       if is_protected "$t"; then
         if [ ${#pos[@]} -gt 1 ]; then block "no push to protected branches: $t is protected; open a PR"; fi

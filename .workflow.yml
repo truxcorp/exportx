@@ -7,6 +7,7 @@ project:                       # AI agents: ask the human for any empty value; n
   protected_branches: [main]   # agents never push to these directly (one line, [a, b]); main and the trunk are always protected
   rules_import: CLAUDE.md      # file that loads the kit rules; CLAUDE.local.md (gitignored) keeps the rules text personal, settings and hooks stay shared
   adr_path: docs/adr/          # architecture decision records
+  direct_push_remotes: [github.com/SimonTrux/ObsiOne]   # project rule: repos agents may push to main directly (notes vault); read from main only
 
 commands:                      # single entry points; CI and humans call these, nothing else
   lint:        make lint
