@@ -70,7 +70,7 @@ their behaviour (`tests/test_exportpro.sh` is the reference).
 ## Slices (one PR each)
 | # | PR | Size |
 |---|---|---|
-| 1 | Scaffold + CI: Cargo workspace (`crates/core`, `crates/cli`), Makefile (`lint` = `cargo fmt --check` + clippy, `typecheck` = `cargo check`, `test-unit` = `cargo test` + `bash tests/test_exportpro.sh`), `Containerfile` (ubuntu:26.04), `pr.yml` + `security.yml` on the self-hosted runner (Linux only), Dependabot (cargo, npm, github-actions), git hooks, `RUNNER_LABELS` repo variable. Use the `workflow-ci-setup` skill. | ~1 d |
+| 1 | Scaffold + CI: Cargo workspace (`crates/core`, `crates/cli`), Makefile (`lint` = `cargo fmt --check` + clippy, `typecheck` = `cargo check`, `test-unit` = `cargo test` + `bash tests/test_exportpro.sh` + `bash tests/test_guard.sh`), `Containerfile` (ubuntu:26.04), `pr.yml` + `security.yml` on the self-hosted runner (Linux only), Dependabot (cargo, npm, github-actions), git hooks, `RUNNER_LABELS` repo variable. Use the `workflow-ci-setup` skill. | ~1 d |
 | 2 | Core: scan, date rules, layout templates, plan; `exportpro plan`. Behaviours 1–8. | ~1.5 d |
 | 3 | Core: copy + verify + log, erase to Trash, undo; `exportpro apply / erase / undo`. Behaviours 9–12. | ~1.5 d |
 | 4 | Tauri app: screens, FR/EN, settings incl. layout presets. `build.yml` builds unsigned Linux AppImage + `.deb` on merge to `main` and on `workflow_dispatch`. Behaviours 13–15. | ~2 d |
