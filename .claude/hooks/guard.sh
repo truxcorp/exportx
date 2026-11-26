@@ -48,21 +48,37 @@ for c in "$cfg_local" "$cfg_merged"; do
   protected+=" $(project_val default_branch "$c") $(project_val protected_branches "$c" | tr -d '[]"'"'"'' | tr ',' ' ') "
 done
 protected=$(tr -s ' ' <<<"$protected")
-# Project exception: repos whose remote is listed in project.direct_push_remotes (e.g. a
-# notes vault) may be pushed to their protected branch directly. Read from the merged
-# config only, so a local edit can't add an exception.
-direct_ok=" $(project_val direct_push_remotes "$cfg_merged" | tr -d '[]"'"'"'' | tr ',' ' ') "
-norm_remote() { # https://host/o/r.git, git@host:o/r.git -> host/o/r
-  sed -E 's#^[a-z+]+://##; s#^[^@/]+@##; s#^([^/:]+):#\1/#; s#\.git/?$##; s#/$##' <<<"$1"
+# Project exception (not from the kit): `git -C <dir> push` to a repo whose push URL is
+# listed in project.direct_push_remotes (e.g. the notes vault) may target its protected
+# branch. The list is read from the merged config only, never matches the session repo's
+# own remote, and anything the guard can't resolve exactly gets no exception.
+# Other repos reached with -C are judged with this repo's protected list.
+direct_ok=" $(project_val direct_push_remotes "$cfg_merged" | tr -d '[]"'"'"'' | tr ',' ' ' | tr '[:upper:]' '[:lower:]') "
+norm_remote() { # https://host[:port]/o/r.git, git@host:o/r.git -> host/o/r (lower case)
+  sed -E 's#^[a-z+]+://##; s#^[^@/]+@##; s#^([^/:]+):[0-9]+/#\1/#; s#^([^/:]+):#\1/#; s#\.git/?$##; s#/$##' <<<"$1" |
+    tr '[:upper:]' '[:lower:]'
 }
-resolve_dir() { # resolve_dir <base> <path>: absolute path, ~ expanded, quotes removed
+resolve_dir() { # resolve_dir <base> <path>: absolute path with ~ expanded; fails on quotes or $
   local d=$2
-  d=${d#[\"\']}; d=${d%[\"\']}
+  case "$d" in *[\"\'\$\`\\]*) return 1 ;; esac
   # shellcheck disable=SC2088 # literal ~ in the command text, expanded by hand
   case "$d" in "~") d=$HOME ;; "~/"*) d="$HOME/${d#\~/}" ;; /*) ;; *) d="$1/$d" ;; esac
   printf '%s' "$d"
 }
-cur_dir=${cwd:-$PWD}
+direct_push_ok() { # direct_push_ok <repo dir> <named remote or empty>: 0 if listed
+  local dir=$1 remote=$2 b url own
+  [ -n "$remote" ] || {
+    b=$(git -C "$dir" branch --show-current 2>/dev/null) && [ -n "$b" ] || return 1
+    remote=$(git -C "$dir" config "branch.$b.pushRemote" || git -C "$dir" config remote.pushDefault ||
+      git -C "$dir" config "branch.$b.remote" || echo origin)
+  }
+  git -C "$dir" config --get-regexp '^url\..*insteadof$' >/dev/null 2>&1 && return 1
+  url=$(git -C "$dir" remote get-url --push "$remote" 2>/dev/null) || return 1
+  own=$(git -C "${top:-.}" remote get-url --push origin 2>/dev/null || true)
+  [ "$(norm_remote "$url")" != "$(norm_remote "$own")" ] || return 1
+  [[ "$direct_ok" == *" $(norm_remote "$url") "* ]]
+}
+cd_away=0
 is_protected() { [[ "$protected" == *" $1 "* ]]; }
 export GUARD_BRANCH="$branch" GUARD_CWD="$cwd" GUARD_CMD="$cmd"
 need_ask=""
@@ -78,21 +94,47 @@ while IFS= read -r seg; do
   seg=$(sed -E 's/^[[:space:]]+//' <<<"$seg")
   [ -n "$seg" ] || continue
 
-  # 0. cd changes the repo later segments act on (cd <vault> && git push).
-  if [[ "$seg" =~ ^cd([[:space:]]+([^[:space:]]+))?[[:space:]]*$ ]]; then
-    cur_dir=$(resolve_dir "$cur_dir" "${BASH_REMATCH[2]:-~}")
-    branch=$(git -C "$cur_dir" branch --show-current 2>/dev/null || true)
-    continue
+  # 0. A cd that leaves this repo makes later implicit pushes unknowable: remember it.
+  if [[ "$seg" =~ ^(builtin[[:space:]]+)?(cd|pushd)([[:space:]]|$) ]]; then
+    read -ra cw <<<"$seg"
+    ci=1
+    [ "${cw[0]}" = builtin ] && ci=2
+    cd_to=$(resolve_dir "${cwd:-.}" "${cw[$ci]:-~}") || cd_to=""
+    cd_top=""
+    [ -n "$cd_to" ] && cd_top=$(git -C "$cd_to" rev-parse --show-toplevel 2>/dev/null || true)
+    [ -n "$top" ] && [ "$cd_top" = "$top" ] || cd_away=1
   fi
 
-  # 1. git push rules, judged on the repo the push targets (cd, git -C).
-  if [[ "$seg" =~ ^(sudo[[:space:]]+)?git(([[:space:]]+-[Cc][[:space:]]+[^[:space:]]+|[[:space:]]+-[^[:space:]]+)*)[[:space:]]+push([[:space:]].*)?$ ]]; then
-    gopts=${BASH_REMATCH[2]}
-    args=" ${BASH_REMATCH[4]} "
-    tdir=$cur_dir tbranch=$branch
-    if [[ "$gopts" =~ -C[[:space:]]+([^[:space:]]+) ]]; then
-      tdir=$(resolve_dir "$cur_dir" "${BASH_REMATCH[1]}")
-      tbranch=$(git -C "$tdir" branch --show-current 2>/dev/null || true)
+  # 1. git push rules. Global options are parsed so `git -C <dir> push` is caught too.
+  read -ra gw <<<"$seg"
+  gi=0
+  [ "${gw[0]:-}" = sudo ] && gi=1
+  sub="" cdirs=() gother=0
+  if [ "${gw[$gi]:-}" = git ]; then
+    gi=$((gi + 1))
+    while [ "$gi" -lt "${#gw[@]}" ]; do
+      case "${gw[$gi]}" in
+        -C) cdirs+=("${gw[$((gi + 1))]:-}"); gi=$((gi + 2)) ;;
+        -c|--git-dir|--work-tree|--namespace|--config-env|--exec-path|--super-prefix) gother=1; gi=$((gi + 2)) ;;
+        -*) gother=1; gi=$((gi + 1)) ;;
+        *) break ;;
+      esac
+    done
+    sub=${gw[$gi]:-}
+  fi
+  if [ "$sub" = push ]; then
+    args=" ${gw[*]:$((gi + 1))} "
+    tdir=${top:-${cwd:-.}} tbranch=$branch
+    if [ ${#cdirs[@]} -gt 1 ] || { [ ${#cdirs[@]} -eq 1 ] && [ $gother -eq 1 ]; }; then
+      block "no push to protected branches: can't tell which repo this push targets; use a single git -C <dir> push"
+    fi
+    if [ ${#cdirs[@]} -eq 1 ]; then
+      tdir=$(resolve_dir "${cwd:-.}" "${cdirs[0]}") && [ -d "$tdir" ] ||
+        block "no push to protected branches: can't resolve the -C directory"
+      tbranch=$(git -C "$tdir" branch --show-current 2>/dev/null) ||
+        block "no push to protected branches: -C directory is not a git repo"
+    elif [ $cd_away -eq 1 ]; then
+      block "no push to protected branches: a cd before this push leaves the repo; use git -C <dir> push"
     fi
     is_tag=0
     grep -Eq '[[:space:]](--tags|refs/tags/[^[:space:]]+|v[0-9]+\.[0-9]+\.[0-9]+)[[:space:]]' <<<"$args" && is_tag=1
@@ -123,13 +165,17 @@ while IFS= read -r seg; do
     elif [ $is_tag -eq 0 ]; then targets=(HEAD)
     else targets=()
     fi
-    remote=${pos[0]:-origin}
-    url=$(git -C "$tdir" remote get-url "$remote" 2>/dev/null || printf '%s' "$remote")
-    [[ "$direct_ok" == *" $(norm_remote "$url") "* ]] && targets=()
+    if [ ${#cdirs[@]} -eq 1 ] && [ $gother -eq 0 ] && ! grep -Eq '[[:space:]]--repo' <<<"$args" &&
+      direct_push_ok "$tdir" "${pos[0]:-}"; then
+      targets=()
+    fi
     for t in "${targets[@]}"; do
       t=${t#+}
       [[ "$t" == *:* ]] && t=${t#*:}
-      [ "$t" = HEAD ] && t=$tbranch
+      if [ "$t" = HEAD ]; then
+        [ -n "$tbranch" ] || block "no push to protected branches: can't tell the current branch (detached HEAD?)"
+        t=$tbranch
+      fi
       t=${t#refs/heads/}
       if is_protected "$t"; then
         if [ ${#pos[@]} -gt 1 ]; then block "no push to protected branches: $t is protected; open a PR"; fi
