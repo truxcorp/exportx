@@ -1,0 +1,3 @@
+# Build context of the Containerfile: only what it COPYs (keeps target/ and .env out).
+*
+!rust-toolchain.toml

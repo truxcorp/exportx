@@ -1,0 +1,22 @@
+name: pr
+# The only PR workflow (workflow kit, ci module). Thin on purpose: `make ci` builds the
+# Containerfile image and runs lint, typecheck, unit tests and security in it, so the same
+# checks run on a laptop and the CI host stays replaceable. Linux only, on the truxcorp
+# self-hosted runners (RUNNER_LABELS repo variable). No secrets in this workflow.
+on:
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  checks:
+    runs-on: ${{ fromJSON(vars.RUNNER_LABELS || '"ubuntu-26.04"') }}
+    timeout-minutes: 30             # image build ~6 min when not cached, checks ~1 min
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0            # gitleaks scans every commit
+          persist-credentials: false
+      - run: make ci

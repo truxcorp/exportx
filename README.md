@@ -59,3 +59,14 @@ contournement de Gatekeeper. Ce script n'utilise que les outils de base (`stat`,
 bash tests/test_exportpro.sh
 podman run --rm -v "$PWD":/w:Z -w /w docker.io/library/bash:3.2 bash tests/test_exportpro.sh
 ```
+
+## Application de bureau (en cours)
+
+Une application multiplateforme (Tauri v2, cœur en Rust) se construit à côté du script :
+`docs/plan/tauri-prototype.md`. Contrôles, les mêmes que la CI :
+
+```
+make hooks                  # une fois par clone
+make lint typecheck test-unit
+make ci                     # tout, sécurité comprise, dans l'image du Containerfile (podman)
+```

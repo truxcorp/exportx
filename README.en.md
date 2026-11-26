@@ -54,3 +54,14 @@ universal build, plus signing or a Gatekeeper workaround. This script uses only 
 bash tests/test_exportpro.sh
 podman run --rm -v "$PWD":/w:Z -w /w docker.io/library/bash:3.2 bash tests/test_exportpro.sh
 ```
+
+## Desktop app (in progress)
+
+A cross-platform app (Tauri v2, Rust core) is being built next to the script:
+`docs/plan/tauri-prototype.md`. Checks, the same as CI's:
+
+```
+make hooks                  # once per clone
+make lint typecheck test-unit
+make ci                     # everything, security included, in the Containerfile image (podman)
+```
