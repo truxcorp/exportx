@@ -1,7 +1,6 @@
 # Plan: ExportPro desktop app (Tauri v2 MVP)
 
-Status: **approved 2026-11-26**, except ADR 0004 (tree layout), which is still Proposed
-(issue #5). Heavy work: 5 slices, about 5–7 days.
+Status: **approved 2026-11-26**, ADRs 0001–0004 accepted. Heavy work: 5 slices, about 5–7 days.
 Start with slice 1. Read `CLAUDE.md`, `.workflow/rules.md` and the ADRs in `docs/adr/` first.
 
 ## Goal
@@ -15,9 +14,11 @@ their behaviour (`tests/test_exportpro.sh` is the reference).
 - Stack: Tauri v2, Rust core, plain HTML/JS screens: ADR 0001.
 - Capture dates: `nom-exif`, file times as fallback: ADR 0002.
 - Copy only; erasing originals is a separate, undoable step: ADR 0003.
-- Configurable tree layout (`p|v` → `photo|video`, …): ADR 0004 (**Proposed**).
+- Configurable tree layout (`p|v` → `photo|video`, …): ADR 0004: every path part is a variable; numbers zero-padded (`txo_0001`).
 - UI and CLI in French and English; the system language picks the default.
-- CI: **Linux only, on the self-hosted runner** (`ci.runner_labels` in `.workflow.yml`).
+- CI: **Linux only, on the truxcorp org's self-hosted Linux runners** (`ci.runner_labels`
+  in `.workflow.yml`). If jobs don't get picked up or fail for runner reasons, stop and
+  ask the human; don't switch to GitHub-hosted runners on your own.
   GitHub-hosted macOS / Windows runners come after the MVP, so the first Mac test
   happens after the MVP too.
 - Dev environment: one `Containerfile` on `ubuntu:26.04` (Rust, Node, Tauri Linux libs,
@@ -82,5 +83,5 @@ builds, Mac test by the human, then signing / notarization (needs the human's ce
 - EXIF dates have no timezone: read as camera-local time. QuickTime dates are UTC:
   converted to the computer's timezone.
 - With "one day" chosen, all files go into that day's folder, whatever their own date.
-- Numbers are not zero-padded (`txo_1`), as today, unless ADR 0004 adds padding.
+- Numbers are zero-padded to 4 digits by default (`txo_0001`); v0.2.0 used `txo_1`.
 - Packages are unsigned during the MVP.
