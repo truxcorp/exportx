@@ -10,5 +10,12 @@ publish.workspace = true
 name = "exportpro"
 path = "src/main.rs"
 
+[dependencies]
+chrono = { version = "0.4.45", default-features = false, features = ["std"] }
+exportpro-core = { path = "../core" }
+
 [lints]
 workspace = true
+
+[dev-dependencies]
+tempfile = "3.27.0"

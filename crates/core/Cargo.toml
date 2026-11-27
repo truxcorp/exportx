@@ -8,3 +8,7 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+nom-exif = "3.8.0"

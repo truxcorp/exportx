@@ -10,7 +10,7 @@ IMAGE ?= localhost/exportpro-dev:$(shell cat Containerfile rust-toolchain.toml |
 AS_ME = --user "$$(id -u):$$(id -g)" $(if $(filter podman,$(notdir $(CONTAINER))),--userns=keep-id)
 T ?= lint typecheck test-unit security
 
-.PHONY: lint typecheck test-unit test-integration security hooks image box ci
+.PHONY: lint typecheck test-unit test-integration security hooks image box run ci
 
 ## lint: rustfmt check and clippy (warnings fail)
 lint:
@@ -45,10 +45,18 @@ image:
 	$(CONTAINER) image inspect $(IMAGE) >/dev/null 2>&1 || $(CONTAINER) build -t $(IMAGE) -f Containerfile . \
 	  || { scripts/podman-diagnose.sh $(CONTAINER); exit 1; }
 
+# Crates downloaded in the image are kept on the host between runs.
+CARGO_REGISTRY ?= $(HOME)/.cargo/registry
+BOX_RUN = mkdir -p "$(CARGO_REGISTRY)" && $(CONTAINER) run --rm $(AS_ME) -v "$(CURDIR):/src:z" \
+	  -v "$(CARGO_REGISTRY):/usr/local/cargo/registry:z" -e CI -e CARGO_TARGET_DIR=/src/target/box $(IMAGE)
+
 ## box: run `make $(T)` in the image, with the checkout mounted
 box: image
-	$(CONTAINER) run --rm $(AS_ME) -v "$(CURDIR):/src:z" -e CI -e CARGO_TARGET_DIR=/src/target/box \
-	  $(IMAGE) make $(T)
+	$(BOX_RUN) make $(T)
+
+## run: run any command in the image, e.g. make run C="cargo test -p exportpro-core"
+run: image
+	$(BOX_RUN) $(C)
 
 ## ci: what pr.yml runs
 ci: box
