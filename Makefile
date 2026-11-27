@@ -61,11 +61,12 @@ image:
 	$(CONTAINER) image inspect $(IMAGE) >/dev/null 2>&1 || $(CONTAINER) build -t $(IMAGE) -f Containerfile . \
 	  || { scripts/podman-diagnose.sh $(CONTAINER); exit 1; }
 
-# Crates downloaded in the image are kept on the host between runs.
+# Crates downloaded in the image are kept on the host between runs. /dev/shm is another
+# device than /tmp: the tests copy there (erase refuses copies on the original's device).
 CARGO_REGISTRY ?= $(HOME)/.cargo/registry
 BOX_RUN = mkdir -p "$(CARGO_REGISTRY)" "$(TARGET_DIR)" && $(CONTAINER) run --rm $(AS_ME) -v "$(CURDIR):/src:z" \
 	  -v "$(CARGO_REGISTRY):/usr/local/cargo/registry:z" -v "$(TARGET_DIR):/target:z" \
-	  -e CI -e CARGO_TARGET_DIR=/target/box $(IMAGE)
+	  --shm-size 512m -e CI -e CARGO_TARGET_DIR=/target/box $(IMAGE)
 
 ## box: run `make $(T)` in the image, with the checkout mounted
 box: image

@@ -4,6 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use chrono::NaiveDate;
+use exportpro_core::apply::ShootLocks;
 use exportpro_core::{DateChoice, Lang, Layout, PlanError, Request, Settings};
 use serde::{Deserialize, Serialize};
 
@@ -42,6 +43,9 @@ pub struct PlannedFile {
     /// Something to tell about this file (its date couldn't be read), in the app's language.
     #[serde(default)]
     pub note: Option<String>,
+    /// Already copied into the shoot: shown, not copied again (`dest` is the copy).
+    #[serde(default)]
+    pub already: bool,
 }
 
 impl PlannedFile {
@@ -50,6 +54,7 @@ impl PlannedFile {
             name: name.to_owned(),
             dest: dest.to_owned(),
             note: None,
+            already: false,
         }
     }
 }
@@ -70,8 +75,13 @@ pub struct LogOutcome {
     pub kept: Vec<(String, String)>,
 }
 
-/// The core's request and plan for `req`, or what to show instead.
-fn make_plan(req: &PlanRequest, lang: Lang) -> Result<(exportpro_core::Plan, Request), PlanResult> {
+/// The core's plan for `req`, or what to show instead; with `locked`, made under the
+/// shoot locks, which are returned with it.
+fn make_plan(
+    req: &PlanRequest,
+    lang: Lang,
+    locked: bool,
+) -> Result<(exportpro_core::Plan, Request, Option<ShootLocks>), PlanResult> {
     let error = |message: String| PlanResult::Error { message };
     let layout = Layout::preset(&req.preset).ok_or_else(|| {
         error(match lang {
@@ -93,8 +103,13 @@ fn make_plan(req: &PlanRequest, lang: Lang) -> Result<(exportpro_core::Plan, Req
     };
     let groups = exportpro_core::scan(&req.source)
         .map_err(|e| error(lang.cannot_read(&req.source, &(&e).into())))?;
-    match exportpro_core::plan(&groups, &request) {
-        Ok(plan) => Ok((plan, request)),
+    let planned = if locked {
+        exportpro_core::apply::plan_locked(&groups, &request).map(|(p, l)| (p, Some(l)))
+    } else {
+        exportpro_core::plan(&groups, &request).map(|p| (p, None))
+    };
+    match planned {
+        Ok((plan, locks)) => Ok((plan, request, locks)),
         Err(PlanError::SeveralDays(days)) => Err(PlanResult::Days { days }),
         Err(e) => Err(error(lang.plan_error(&e, &req.source))),
     }
@@ -102,8 +117,8 @@ fn make_plan(req: &PlanRequest, lang: Lang) -> Result<(exportpro_core::Plan, Req
 
 /// The preview: every original and where it goes, the days to choose from, or why not.
 pub fn plan(req: &PlanRequest, lang: Lang) -> PlanResult {
-    match make_plan(req, lang) {
-        Ok((plan, _)) => PlanResult::Plan {
+    match make_plan(req, lang, false) {
+        Ok((plan, _, _)) => PlanResult::Plan {
             entries: previewed_entries(&plan, lang),
         },
         Err(other) => other,
@@ -117,7 +132,14 @@ fn previewed_entries(plan: &exportpro_core::Plan, lang: Lang) -> Vec<PlannedFile
             name: e.name.clone(),
             dest: e.dest.to_string_lossy().replace('\\', "/"),
             note: e.date_unreadable.then(|| lang.date_unreadable(&e.name)),
+            already: false,
         })
+        .chain(plan.already.iter().map(|a| PlannedFile {
+            name: a.name.clone(),
+            dest: a.copy.to_string_lossy().replace('\\', "/"),
+            note: Some(lang.pick("already copied", "déjà copié").to_owned()),
+            already: true,
+        }))
         .collect()
 }
 
@@ -138,7 +160,7 @@ pub fn apply(
     settings: &Path,
     progress: impl FnMut(usize, usize),
 ) -> Result<ApplyOutcome, String> {
-    let (plan, request) = match make_plan(req, lang) {
+    let (plan, request, _locks) = match make_plan(req, lang, true) {
         Ok(p) => p,
         Err(PlanResult::Error { message }) => return Err(message),
         Err(_) => return Err(changed_since_preview(lang)),
@@ -146,11 +168,8 @@ pub fn apply(
     // Copy exactly what the preview showed: refuse if the card or the destination changed.
     // Name and destination only: notes are worded in a language that may have changed.
     let now: Vec<PlannedFile> = previewed_entries(&plan, lang);
-    let same = now.len() == expected.len()
-        && now
-            .iter()
-            .zip(expected)
-            .all(|(a, b)| a.name == b.name && a.dest == b.dest);
+    let key = |f: &PlannedFile| (f.name.clone(), f.dest.clone(), f.already);
+    let same = now.iter().map(key).eq(expected.iter().map(key));
     if !same {
         return Err(changed_since_preview(lang));
     }

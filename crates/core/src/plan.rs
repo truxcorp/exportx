@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use chrono::NaiveDate;
 
 use crate::layout::{Layout, Vars};
+use crate::log::{self, Event, LogLine};
 use crate::names::{NameProblem, check_name};
 use crate::scan::{Group, Kind, VIDEO_EXTS};
 
@@ -55,6 +56,18 @@ pub struct Plan {
     pub entries: Vec<Entry>,
     /// Empty folders for edited files, relative to the destination folder.
     pub edited: BTreeSet<PathBuf>,
+    /// Files whose verified copy is already in the shoot (same name, size and SHA-256 in
+    /// its log, copy still there): not copied again.
+    pub already: Vec<Already>,
+}
+
+/// A source file already copied into the shoot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Already {
+    pub name: String,
+    pub source: PathBuf,
+    /// The existing copy, relative to the destination folder.
+    pub copy: PathBuf,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,6 +92,15 @@ pub enum PlanError {
     },
     /// Something already exists at this destination (relative to `Request::dest`).
     Exists(PathBuf),
+    /// Every file is already copied into the shoot: their number.
+    AllCopied(usize),
+    /// Another copy is writing into this shoot folder right now.
+    Busy(PathBuf),
+    /// The destination can't be written to (tried in its nearest existing folder).
+    NotWritable {
+        path: PathBuf,
+        error: crate::i18n::IoReason,
+    },
     /// The destination's disk can't hold the copies: bytes `needed` (margin included)
     /// and `free`.
     NoRoom {
@@ -120,6 +142,8 @@ pub fn plan(groups: &[Group], req: &Request) -> Result<Plan, PlanError> {
     let mut last_number: BTreeMap<PathBuf, usize> = BTreeMap::new();
     let mut entries = Vec::new();
     let mut edited = BTreeSet::new();
+    let mut already = Vec::new();
+    let mut copied_cache: BTreeMap<PathBuf, Vec<LogLine>> = BTreeMap::new();
     for g in groups {
         let date = match req.date {
             DateChoice::Given(d) => Some(d),
@@ -127,18 +151,49 @@ pub fn plan(groups: &[Group], req: &Request) -> Result<Plan, PlanError> {
             DateChoice::NoDate => None,
         };
         let shoot = shoot_folder(req, date);
-        if !last_number.contains_key(&shoot) {
-            let highest = highest_number(req, &shoot, date)?;
-            last_number.insert(shoot.clone(), highest);
+        if !copied_cache.contains_key(&shoot) {
+            let copies = copies_in(&req.dest.join(&shoot))?;
+            copied_cache.insert(shoot.clone(), copies);
         }
-        let n = last_number.get_mut(&shoot).expect("inserted above");
-        *n += 1;
-        let n = *n;
+        let copied = &copied_cache[&shoot];
+        let mut new_files = Vec::new();
+        let mut copied_here: Option<PathBuf> = None;
+        for f in &g.files {
+            match find_copy(f, copied, &req.dest.join(&shoot)) {
+                Some(copy) => {
+                    copied_here.get_or_insert_with(|| copy.clone());
+                    already.push(Already {
+                        name: f.name.clone(),
+                        source: f.path.clone(),
+                        copy: shoot.join(copy),
+                    });
+                }
+                None => new_files.push(f),
+            }
+        }
+        if new_files.is_empty() {
+            continue;
+        }
+        // Part of the group is already copied (e.g. its JPEG): the rest takes that
+        // copy's number, so files sharing a base name keep sharing one.
+        let existing = copied_here.and_then(|copy| number_of(req, date, &copy));
+        let n = match existing {
+            Some(n) => n,
+            None => {
+                if !last_number.contains_key(&shoot) {
+                    let highest = highest_number(req, &shoot, date)?;
+                    last_number.insert(shoot.clone(), highest);
+                }
+                let n = last_number.get_mut(&shoot).expect("inserted above");
+                *n += 1;
+                *n
+            }
+        };
         let kind = match g.kind {
             Kind::Photo => &req.layout.photo,
             Kind::Video => &req.layout.video,
         };
-        for f in &g.files {
+        for f in new_files {
             let vars = Vars {
                 date,
                 shoot: &req.shoot,
@@ -166,6 +221,9 @@ pub fn plan(groups: &[Group], req: &Request) -> Result<Plan, PlanError> {
             });
         }
     }
+    if entries.is_empty() && !already.is_empty() {
+        return Err(PlanError::AllCopied(already.len()));
+    }
     check_destinations(&entries)?;
     for e in &entries {
         let path = req.dest.join(&e.dest);
@@ -176,7 +234,82 @@ pub fn plan(groups: &[Group], req: &Request) -> Result<Plan, PlanError> {
         }
     }
     check_room(req, &entries)?;
-    Ok(Plan { entries, edited })
+    Ok(Plan {
+        entries,
+        edited,
+        already,
+    })
+}
+
+/// The verified copies a shoot folder's log records whose file is still there (none
+/// without a log; a log that can't be read is an error, not "nothing copied").
+fn copies_in(shoot: &Path) -> Result<Vec<LogLine>, PlanError> {
+    let path = shoot.join(log::LOG_NAME);
+    let lines = match log::read(&path) {
+        Ok((lines, _)) => lines,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(err) => return Err(cannot_read(&path, &err)),
+    };
+    Ok(lines
+        .into_iter()
+        .filter(|l| matches!(l.event, Event::Copied | Event::Erased | Event::Restored))
+        .filter(|l| shoot.join(&l.dest).is_file())
+        .collect())
+}
+
+/// The number in an existing copy's file name (`p/o/jpg/txo_0007.jpg` → 7).
+fn number_of(req: &Request, date: Option<NaiveDate>, copy: &Path) -> Option<usize> {
+    let vars = Vars {
+        date,
+        shoot: &req.shoot,
+        prefix: &req.prefix,
+        ..Vars::default()
+    };
+    let kinds = [req.layout.photo.as_str(), req.layout.video.as_str()];
+    let name = copy.file_name()?.to_str()?;
+    req.layout
+        .original
+        .file_name()
+        .number_in(name, &vars, kinds)
+}
+
+/// The copy (relative to the shoot) of `f` among `copied`: same file name and size,
+/// then the same SHA-256 for the original and for the copy as it is now (a copy edited
+/// since doesn't count). Hashes are read only for files that pass the first two.
+fn find_copy(f: &crate::scan::SourceFile, copied: &[LogLine], shoot: &Path) -> Option<PathBuf> {
+    let size = fs::metadata(&f.path).ok()?.len();
+    let candidates: Vec<&LogLine> = copied
+        .iter()
+        .filter(|l| l.size == Some(size))
+        .filter(|l| l.source.file_name().and_then(|n| n.to_str()) == Some(f.name.as_str()))
+        .collect();
+    if candidates.is_empty() {
+        return None;
+    }
+    let sha256 = cached_hash(&f.path)?;
+    candidates
+        .into_iter()
+        .filter(|l| l.sha256.as_deref() == Some(sha256.as_str()))
+        .find(|l| cached_hash(&shoot.join(&l.dest)).as_deref() == Some(sha256.as_str()))
+        .map(|l| l.dest.clone())
+}
+
+/// SHA-256 of a file, kept for the process by path, size and modification time: a copy
+/// plans up to three times (preview, then twice under the locks).
+fn cached_hash(path: &Path) -> Option<String> {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    type Key = (PathBuf, u64, Option<std::time::SystemTime>);
+    static CACHE: OnceLock<Mutex<HashMap<Key, String>>> = OnceLock::new();
+    let meta = fs::metadata(path).ok()?;
+    let key = (path.to_path_buf(), meta.len(), meta.modified().ok());
+    let cache = CACHE.get_or_init(Default::default);
+    if let Some(hash) = cache.lock().ok()?.get(&key) {
+        return Some(hash.clone());
+    }
+    let (_, hash) = crate::apply::hash_file(path).ok()?;
+    cache.lock().ok()?.insert(key, hash.clone());
+    Some(hash)
 }
 
 /// Room kept on top of the files: the log, the folders, the file system's own blocks.
@@ -205,7 +338,37 @@ fn check_room(req: &Request, entries: &[Entry]) -> Result<(), PlanError> {
     if needed > free {
         return Err(PlanError::NoRoom { needed, free });
     }
+    check_writable(at)?;
+    // Shoot folders that already exist (earlier copies) may be read-only on their own.
+    let mut probed = vec![at.to_path_buf()];
+    for e in entries {
+        let folder = dest.join(&e.shoot);
+        if folder.is_dir() && !probed.contains(&folder) {
+            check_writable(&folder)?;
+            probed.push(folder);
+        }
+    }
     Ok(())
+}
+
+/// Write and remove a small file in `folder`, where the shoot's folders will be made:
+/// a read-only disk or a missing permission is caught before any copy.
+fn check_writable(folder: &Path) -> Result<(), PlanError> {
+    let probe = folder.join(format!(".exportpro-write-test-{}", std::process::id()));
+    let written = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&probe);
+    match written {
+        Ok(_) => {
+            let _ = fs::remove_file(&probe);
+            Ok(())
+        }
+        Err(err) => Err(PlanError::NotWritable {
+            path: folder.to_path_buf(),
+            error: crate::i18n::IoReason::from(&err),
+        }),
+    }
 }
 
 fn check(name: &str) -> Result<(), PlanError> {

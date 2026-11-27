@@ -47,6 +47,10 @@ pub enum Keep {
         log: PathBuf,
         error: IoReason,
     },
+    /// The copy is on the same device as the original: erasing would leave one exemplar.
+    SameDevice {
+        copy: PathBuf,
+    },
     /// The system Trash refused it.
     Trash(String),
     /// Copying it back failed.
@@ -87,6 +91,13 @@ pub fn erase(shoot: &Path) -> io::Result<Outcome> {
             .and_then(|()| check(&line.source, &line, Which::Original))
         {
             outcome.kept.push((line.source.clone(), why));
+            continue;
+        }
+        let copy = shoot.join(&line.dest);
+        if same_device(&copy, &line.source) {
+            outcome
+                .kept
+                .push((line.source.clone(), Keep::SameDevice { copy }));
             continue;
         }
         // Logged first: undo must know about every original that may be in the Trash.
@@ -170,4 +181,91 @@ fn check(path: &Path, line: &LogLine, which: Which) -> Result<(), Keep> {
             path: path.to_path_buf(),
         })
     }
+}
+
+/// Whether two existing files are on the same device (disk, card, partition).
+fn same_device(a: &Path, b: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let (a_path, b_path) = (a, b);
+        let (Ok(a), Ok(b)) = (std::fs::metadata(a), std::fs::metadata(b)) else {
+            return false;
+        };
+        if a.dev() == b.dev() {
+            return true;
+        }
+        // Linux: btrfs subvolumes and bind mounts show their own device numbers for one
+        // disk; the disk itself is the source of the mount holding each file, found by
+        // mount point in /proc/self/mountinfo.
+        #[cfg(target_os = "linux")]
+        if let Ok(info) = std::fs::read_to_string("/proc/self/mountinfo") {
+            let disk = |p: &Path| {
+                let real = std::fs::canonicalize(p).ok()?;
+                // Only real disks: "tmpfs", "overlay"… name no disk and prove nothing.
+                mount_source_for(&info, &real).filter(|s| s.starts_with("/dev/"))
+            };
+            if let (Some(x), Some(y)) = (disk(a_path), disk(b_path)) {
+                return x == y;
+            }
+        }
+        false
+    }
+    #[cfg(windows)]
+    {
+        // The volume: the drive letter or share the real path starts with.
+        let volume = |p: &Path| {
+            std::fs::canonicalize(p).ok().and_then(|p| {
+                p.components()
+                    .next()
+                    .map(|c| c.as_os_str().to_ascii_lowercase())
+            })
+        };
+        matches!((volume(a), volume(b)), (Some(x), Some(y)) if x == y)
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = (a, b);
+        false
+    }
+}
+
+/// The mount source (e.g. `/dev/nvme0n1p3`) of the device `major:minor` in a
+/// `/proc/self/mountinfo` text.
+pub fn mount_source(mountinfo: &str, major: u64, minor: u64) -> Option<String> {
+    let wanted = format!("{major}:{minor}");
+    mountinfo.lines().find_map(|line| {
+        let (before, after) = line.split_once(" - ")?;
+        if before.split(' ').nth(2)? != wanted {
+            return None;
+        }
+        after.split(' ').nth(1).map(str::to_owned)
+    })
+}
+
+/// The mount source (e.g. `/dev/nvme0n1p3`) of the mount holding `path` (absolute, real),
+/// found by mount point in a `/proc/self/mountinfo` text: the longest mount point that
+/// contains `path`.
+pub fn mount_source_for(mountinfo: &str, path: &Path) -> Option<String> {
+    mountinfo
+        .lines()
+        .filter_map(|line| {
+            let (before, after) = line.split_once(" - ")?;
+            let point = unescape_mount(before.split(' ').nth(4)?);
+            let source = after.split(' ').nth(1)?.to_owned();
+            path.starts_with(&point).then_some((point, source))
+        })
+        .max_by_key(|(point, _)| point.components().count())
+        .map(|(_, source)| source)
+}
+
+/// mountinfo writes spaces, tabs, newlines and backslashes as `\040`, `\011`, `\012`,
+/// `\134`.
+fn unescape_mount(field: &str) -> PathBuf {
+    let field = field
+        .replace("\\040", " ")
+        .replace("\\011", "\t")
+        .replace("\\012", "\n")
+        .replace("\\134", "\\");
+    PathBuf::from(field)
 }

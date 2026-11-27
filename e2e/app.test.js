@@ -1,7 +1,7 @@
 // Behaviour 13 end to end: the real app, driven through WebDriver (ADR 0005).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { launch } from "./driver.js";
 
@@ -26,12 +26,14 @@ async function pasteFolders(app, src, dest) {
 
 test("copy, erase and undo from the source to the last screen", async () => {
   const app = await launch({ lang: "fr_FR.UTF-8" });
+  // Another device than the card (erase refuses copies on the same one).
+  // Fails loudly without /dev/shm (run the tests with make box).
+  const dest = mkdtempSync("/dev/shm/exportpro-e2e-");
   try {
     const src = join(app.home, "carte");
-    const dest = join(app.home, "photos");
     mk(src, "2024-03-05T09:00", ["A.CR2", "A.JPG"]);
     mk(src, "2024-03-07T10:00", ["B.JPG"]);
-    mkdirSync(dest);
+    mkdirSync(dest, { recursive: true });
 
     await app.waitText("1. Les photos à ranger");
     await app.screenshot("1-source");
@@ -67,6 +69,7 @@ test("copy, erase and undo from the source to the last screen", async () => {
     assert.equal(readFileSync(join(src, "A.CR2"), "utf8"), "A.CR2");
   } finally {
     await app.close();
+    if (dest?.startsWith("/dev/shm/")) rmSync(dest, { recursive: true, force: true });
   }
 });
 

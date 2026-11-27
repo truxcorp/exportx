@@ -9,6 +9,7 @@ use exportpro_core::Lang;
 
 struct Dirs {
     _tmp: tempfile::TempDir,
+    _dest_tmp: tempfile::TempDir,
     src: PathBuf,
     dest: PathBuf,
     settings: PathBuf,
@@ -17,12 +18,16 @@ struct Dirs {
 fn dirs() -> Dirs {
     let tmp = tempfile::tempdir().unwrap();
     let src = tmp.path().join("card");
-    let dest = tmp.path().join("photos");
+    // Another device than the card, as in real use (erase refuses copies on the same one).
+    let dest_tmp =
+        tempfile::tempdir_in("/dev/shm").unwrap_or_else(|_| tempfile::tempdir().unwrap());
+    let dest = dest_tmp.path().join("photos");
     fs::create_dir_all(&src).unwrap();
     fs::create_dir_all(&dest).unwrap();
     let settings = tmp.path().join("config/settings.toml");
     Dirs {
         _tmp: tmp,
+        _dest_tmp: dest_tmp,
         src,
         dest,
         settings,
@@ -363,4 +368,25 @@ fn a_folder_that_cannot_be_reached_says_so_instead_of_missing() {
     fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
     let message = checked.unwrap_err();
     assert!(message.contains("permission refusée"), "{message}");
+}
+
+#[test]
+fn the_preview_lists_files_already_copied_and_the_copy_accepts_it() {
+    utc();
+    let d = dirs();
+    mk(&d.src, "a.jpg", 0, 3600);
+    let req = request(&d, DateRequest::Files);
+    commands::apply(&req, &previewed(&req), Lang::En, &d.settings, |_, _| {}).unwrap();
+    mk(&d.src, "b.jpg", 0, 3700);
+
+    let preview = previewed(&req);
+    let outcome = commands::apply(&req, &preview, Lang::En, &d.settings, |_, _| {}).unwrap();
+
+    let already: Vec<_> = preview
+        .iter()
+        .filter(|f| f.already)
+        .map(|f| f.name.as_str())
+        .collect();
+    assert_eq!(already, ["a.jpg"]);
+    assert_eq!(outcome.copied, 1);
 }

@@ -11,6 +11,7 @@ use tempfile::TempDir;
 /// A source and a destination folder, deleted at the end of the test.
 pub struct Dirs {
     _tmp: TempDir,
+    _dest_tmp: TempDir,
     pub src: PathBuf,
     pub dest: PathBuf,
     /// A home folder for the test (the Trash lives in it).
@@ -25,18 +26,29 @@ impl Dirs {
     pub fn with_source_name(name: &str) -> Self {
         let tmp = tempfile::tempdir().unwrap();
         let src = tmp.path().join(name);
-        let dest = tmp.path().join("dest");
+        // The copies go to another device than the originals, as from a card to a disk
+        // (erase refuses copies on the original's device).
+        let dest_tmp = other_device_tempdir();
+        let dest = dest_tmp.path().join("dest");
         let home = tmp.path().join("home");
         fs::create_dir_all(&src).unwrap();
         fs::create_dir_all(&dest).unwrap();
         fs::create_dir_all(&home).unwrap();
         Dirs {
             _tmp: tmp,
+            _dest_tmp: dest_tmp,
             src,
             dest,
             home,
         }
     }
+}
+
+/// A temporary folder on /dev/shm, a device of its own (erase tests need the copies on
+/// another device than the originals). Fails loudly without it.
+pub fn other_device_tempdir() -> TempDir {
+    tempfile::tempdir_in("/dev/shm")
+        .expect("the tests copy to /dev/shm (another device than /tmp): run them with make box")
 }
 
 /// Create files in `dir` whose content is their own name and whose modification time is

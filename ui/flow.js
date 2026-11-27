@@ -69,7 +69,11 @@ export function next(s, e) {
     }
     case "confirm":
       return s.step === "preview"
-        ? { ...s, step: "copying", progress: { done: 0, total: s.entries.length } }
+        ? {
+            ...s,
+            step: "copying",
+            progress: { done: 0, total: s.entries.filter((e) => !e.already).length },
+          }
         : s;
     case "progress":
       return s.step === "copying" ? { ...s, progress: { done: e.done, total: e.total } } : s;

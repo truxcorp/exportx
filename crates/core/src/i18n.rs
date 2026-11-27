@@ -147,6 +147,30 @@ impl Lang {
             (PlanError::CannotRead { path, error }, _) => self.cannot_read(path, error),
             (PlanError::SeveralDays(_), _) => self.several_days().to_owned(),
             (PlanError::NoRoom { needed, free }, _) => self.no_room(*needed, *free),
+            (PlanError::AllCopied(n), Lang::En) => {
+                format!("all {n} files are already copied into this shoot: nothing to do")
+            }
+            (PlanError::AllCopied(n), Lang::Fr) => {
+                format!("les {n} fichiers sont déjà tous copiés dans cette séance : rien à faire")
+            }
+            (PlanError::Busy(shoot), Lang::En) => format!(
+                "Another copy into {} is under way: wait for it to finish",
+                shoot.display()
+            ),
+            (PlanError::Busy(shoot), Lang::Fr) => format!(
+                "Une autre copie est en cours dans {} : attendez qu'elle finisse",
+                shoot.display()
+            ),
+            (PlanError::NotWritable { path, error }, Lang::En) => {
+                format!("cannot write to {}: {}", path.display(), self.io(error))
+            }
+            (PlanError::NotWritable { path, error }, Lang::Fr) => {
+                format!(
+                    "impossible d'écrire dans {} : {}",
+                    path.display(),
+                    self.io(error)
+                )
+            }
             (PlanError::Exists(d), Lang::En) => {
                 format!("{} already exists: nothing was planned", d.display())
             }
@@ -399,6 +423,14 @@ impl Lang {
                     self.io(error)
                 )
             }
+            (Keep::SameDevice { copy }, Lang::En) => format!(
+                "its copy {} is on the same disk as the original: erasing would leave a single exemplar",
+                copy.display()
+            ),
+            (Keep::SameDevice { copy }, Lang::Fr) => format!(
+                "sa copie {} est sur le même disque que l'original : l'effacer n'en laisserait qu'un exemplaire",
+                copy.display()
+            ),
             (Keep::Trash(e), Lang::En) => format!("the Trash refused it: {e}"),
             (Keep::Trash(e), Lang::Fr) => format!("la corbeille l'a refusé : {e}"),
             (Keep::CopyBack(e), Lang::En) => format!("copying it back failed: {}", self.io(e)),
@@ -535,6 +567,14 @@ impl Lang {
             Lang::Fr => format!(
                 "Pas assez de place sur la destination : il manque {missing} ({needed} nécessaires, {free} libres)"
             ),
+        }
+    }
+
+    /// A file skipped because its copy is already in the shoot.
+    pub fn already_copied(self, name: &str, copy: &Path) -> String {
+        match self {
+            Lang::En => format!("already copied: {name} -> {}", copy.display()),
+            Lang::Fr => format!("déjà copié : {name} -> {}", copy.display()),
         }
     }
 }

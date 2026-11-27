@@ -185,3 +185,12 @@ test("a real date passes, 29 February of a leap year included", () => {
   s = next(s, { type: "details", shoot: "s", prefix: "txo", date: "2024-02-29" });
   assert.equal(s.step, "planning");
 });
+
+test("the copy's progress counts only the files to copy, not those already copied", () => {
+  let s = atDetails();
+  s = next(s, { type: "details", shoot: "s", prefix: "txo", date: "" });
+  const mixed = [...entries, { name: "old.jpg", dest: "x/txo_0000.jpg", already: true }];
+  s = next(s, { type: "planned", result: { kind: "plan", entries: mixed } });
+  s = next(s, { type: "confirm" });
+  assert.deepEqual(s.progress, { done: 0, total: 1 });
+});

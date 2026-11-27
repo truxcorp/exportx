@@ -309,7 +309,7 @@ function preview() {
     "section",
     {},
     el("h2", {}, t(lang, "preview_title")),
-    el("p", {}, t(lang, "preview_count", { n: state.entries.length, dest: state.dest })),
+    el("p", {}, t(lang, "preview_count", { n: state.entries.filter((e) => !e.already).length, dest: state.dest })),
     el("p", { class: "safe" }, t(lang, "preview_safe")),
     el(
       "table",

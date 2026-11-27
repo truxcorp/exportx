@@ -180,7 +180,11 @@ fn layout(
 }
 
 fn run(cmd: &str, args: &[String], lang: Lang) -> Result<(), Failure> {
-    let (plan, req) = make_plan(args, lang)?;
+    // A copy plans under the shoot locks; a preview locks nothing.
+    let (plan, req, _locks) = make_plan(args, lang, cmd == "apply")?;
+    for a in &plan.already {
+        eprintln!("exportpro: {}", lang.already_copied(&a.name, &a.copy));
+    }
     for e in plan.entries.iter().filter(|e| e.date_unreadable) {
         eprintln!("exportpro: {}", lang.date_unreadable(&e.name));
     }
@@ -289,7 +293,13 @@ fn preset_used(args: &[String]) -> Option<String> {
     )
 }
 
-fn make_plan(args: &[String], lang: Lang) -> Result<(Plan, Request), Failure> {
+/// The plan of a `plan` or `apply` command line; with `locked`, made under the shoot
+/// locks, which are returned with it.
+fn make_plan(
+    args: &[String],
+    lang: Lang,
+    locked: bool,
+) -> Result<(Plan, Request, Option<exportpro_core::apply::ShootLocks>), Failure> {
     let mut a = parse_plan(args, lang)?;
     // Options left out come from the last copy.
     let saved = Settings::load();
@@ -320,9 +330,15 @@ fn make_plan(args: &[String], lang: Lang) -> Result<(Plan, Request), Failure> {
     };
     let groups = exportpro_core::scan(&source)
         .map_err(|e| Failure::Error(lang.cannot_read(&source, &(&e).into())))?;
-    let plan = exportpro_core::plan(&groups, &req).map_err(|e| match e {
+    let refused = |e| match e {
         exportpro_core::PlanError::SeveralDays(days) => Failure::ChooseDay(days),
         e => Failure::Error(lang.plan_error(&e, &source)),
-    })?;
-    Ok((plan, req))
+    };
+    if locked {
+        let (plan, locks) = exportpro_core::apply::plan_locked(&groups, &req).map_err(refused)?;
+        Ok((plan, req, Some(locks)))
+    } else {
+        let plan = exportpro_core::plan(&groups, &req).map_err(refused)?;
+        Ok((plan, req, None))
+    }
 }
