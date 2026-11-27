@@ -71,8 +71,8 @@ Les versions construites restent sur l'exécution GitHub, dans *Artifacts*.
 
 ## Développement
 
-Les contrôles tournent sur les runners Linux auto-hébergés (variable `RUNNER_LABELS`). Seule la
-construction Mac utilise un runner GitHub.
+Les contrôles tournent sur des runners hébergés par GitHub (variable `RUNNER_LABELS`) : Linux
+pour chaque PR, macOS pour la construction Mac.
 
 ```
 make hooks                  # une fois par clone

@@ -69,8 +69,8 @@ Builds are kept on the GitHub run, under *Artifacts*.
 
 ## Development
 
-Checks run on the self-hosted Linux runners (`RUNNER_LABELS` variable). Only the Mac job
-uses a GitHub runner.
+Checks run on GitHub-hosted runners (`RUNNER_LABELS` variable): Linux for every PR, macOS
+for the Mac build.
 
 ```
 make hooks                  # once per clone

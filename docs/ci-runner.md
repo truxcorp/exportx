@@ -18,7 +18,7 @@ was building or running a container. The runner kills every process of the job, 
 pause process included (they all live in the runner service's cgroup,
 `system.slice/actions.runner.<org>.<runner>.service`). Podman's database still lists the
 container as running, so every later podman command tries to join the dead pause
-process's user namespace and fails. First seen 2026-11-26 on gh-runner-1 (PR #11).
+process's user namespace and fails. First seen 2026-11-26 on the former self-hosted runner.
 
 ## Fix (on the broken runner)
 Either one:
