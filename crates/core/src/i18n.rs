@@ -347,11 +347,11 @@ impl Lang {
         }
     }
 
-    /// `2 file(s) moved; to put them back: exportpro undo --run <id> <shoot>...`
+    /// `2 file(s) moved; to put them back: exportx undo --run <id> <shoot>...`
     pub fn moved(self, moved: usize, run: &str, shoots: &[std::path::PathBuf]) -> String {
         let shoots: Vec<String> = shoots.iter().map(|s| s.display().to_string()).collect();
         let shoots: Vec<String> = shoots.iter().map(|s| shell_quoted(s)).collect();
-        let undo = format!("exportpro undo --run {run} {}", shoots.join(" "));
+        let undo = format!("exportx undo --run {run} {}", shoots.join(" "));
         match self {
             Lang::En => format!("{moved} file(s) moved; to put them back: {undo}"),
             Lang::Fr => format!("{moved} fichier(s) déplacé(s) ; pour les remettre : {undo}"),
@@ -549,14 +549,14 @@ impl Lang {
             }
             (Keep::LogLine { line, problem }, Lang::En) => match problem {
                 LineProblem::Unreadable(e) => format!("line {line}: unreadable ({e}): skipped"),
-                LineProblem::Newer(v) => format!(
-                    "line {line}: format version {v} is newer than this ExportPro's: skipped"
-                ),
+                LineProblem::Newer(v) => {
+                    format!("line {line}: format version {v} is newer than this ExportX's: skipped")
+                }
             },
             (Keep::LogLine { line, problem }, Lang::Fr) => match problem {
                 LineProblem::Unreadable(e) => format!("ligne {line} : illisible ({e}) : ignorée"),
                 LineProblem::Newer(v) => format!(
-                    "ligne {line} : la version de format {v} est plus récente que cet ExportPro : ignorée"
+                    "ligne {line} : la version de format {v} est plus récente que cet ExportX : ignorée"
                 ),
             },
         }
@@ -606,9 +606,11 @@ impl Lang {
 
     pub fn needs_shoot_folders(self, command: &str) -> String {
         match self {
-            Lang::En => format!("{command} needs the shoot folder(s) holding exportpro.log"),
+            Lang::En => format!(
+                "{command} needs the shoot folder(s) holding exportx.log (or exportpro.log)"
+            ),
             Lang::Fr => format!(
-                "{command} demande le ou les dossiers de séance qui contiennent exportpro.log"
+                "{command} demande le ou les dossiers de séance qui contiennent exportx.log (ou exportpro.log)"
             ),
         }
     }

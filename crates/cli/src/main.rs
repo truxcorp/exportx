@@ -1,12 +1,12 @@
-//! `exportpro`: the core's features in a terminal.
+//! `exportx`: the core's features in a terminal.
 //!
-//!   exportpro plan|apply --source <dir> --dest <dir> --shoot <name> [--prefix <p>]
+//!   exportx plan|apply --source <dir> --dest <dir> --shoot <name> [--prefix <p>]
 //!                  [--date YYYY-MM-DD | --split | --no-date]
 //!                  [--preset classique|lisible] [--shoot-path <template>] [--file-path <template>]
 //!                  [--move]   (same disk only: move instead of copy, undone by `undo`)
 //!
-//!   exportpro erase|undo <shoot folder>...
-//!   exportpro undo --run <id> <shoot folder>...   (puts back what `apply --move` moved)
+//!   exportx erase|undo <shoot folder>...
+//!   exportx undo --run <id> <shoot folder>...   (puts back what `apply --move` moved)
 //!
 //! Every command takes `--lang fr|en`; the default follows LC_ALL, LC_MESSAGES, LANG.
 //!
@@ -21,11 +21,11 @@ use exportpro_core::apply::{Mode, ShootLocks};
 use exportpro_core::{DateChoice, Lang, Layout, Plan, Request, Settings, Template};
 
 const DEFAULT_PREFIX: &str = "txo";
-const USAGE: &str = "usage: exportpro plan|apply --source <dir> --dest <dir> --shoot <name> [--prefix <p>] \
+const USAGE: &str = "usage: exportx plan|apply --source <dir> --dest <dir> --shoot <name> [--prefix <p>] \
 [--date YYYY-MM-DD | --split | --no-date] [--preset classique|lisible] \
 [--shoot-path <template>] [--file-path <template>] [--move] [--lang fr|en]\n       \
-exportpro erase|undo <shoot folder>... [--lang fr|en]\n       \
-exportpro undo --run <id> <shoot folder>...   (puts back what `apply --move` moved)";
+exportx erase|undo <shoot folder>... [--lang fr|en]\n       \
+exportx undo --run <id> <shoot folder>...   (puts back what `apply --move` moved)";
 
 /// Options that take a value: what follows them is never read as an option.
 const VALUE_OPTIONS: &[&str] = &[
@@ -68,7 +68,7 @@ fn main() -> ExitCode {
     let lang = match take_lang(&mut args) {
         Ok(lang) => lang,
         Err(msg) => {
-            eprintln!("exportpro: {msg}");
+            eprintln!("exportx: {msg}");
             return ExitCode::FAILURE;
         }
     };
@@ -76,27 +76,27 @@ fn main() -> ExitCode {
         Some(cmd @ ("plan" | "apply")) => match run(cmd, &args[1..], lang) {
             Ok(()) => ExitCode::SUCCESS,
             Err(Failure::Error(msg)) => {
-                eprintln!("exportpro: {msg}");
+                eprintln!("exportx: {msg}");
                 ExitCode::FAILURE
             }
             Err(Failure::ChooseDay(days)) => {
                 for (day, n) in days {
                     println!("{}", lang.day_count(day, n));
                 }
-                eprintln!("exportpro: {}", lang.several_days());
+                eprintln!("exportx: {}", lang.several_days());
                 ExitCode::from(2)
             }
         },
         Some(cmd @ ("erase" | "undo")) => run_log_command(cmd, &args[1..], lang),
         None | Some("-h" | "--help") => {
-            println!("exportpro {}", env!("CARGO_PKG_VERSION"));
+            println!("exportx {}", env!("CARGO_PKG_VERSION"));
             println!("{USAGE}");
             println!();
             println!("{}", lang.formats_help());
             ExitCode::SUCCESS
         }
         Some(other) => {
-            eprintln!("exportpro: {}\n{USAGE}", lang.unknown_command(other));
+            eprintln!("exportx: {}\n{USAGE}", lang.unknown_command(other));
             ExitCode::FAILURE
         }
     }
@@ -192,14 +192,14 @@ fn run(cmd: &str, args: &[String], lang: Lang) -> Result<(), Failure> {
     // A copy plans under the shoot locks; a preview locks nothing.
     let (plan, req, mode, _locks) = make_plan(args, lang, cmd == "apply")?;
     for a in &plan.already {
-        eprintln!("exportpro: {}", lang.already_copied(&a.name, &a.copy));
+        eprintln!("exportx: {}", lang.already_copied(&a.name, &a.copy));
     }
     for e in plan.entries.iter().filter(|e| e.date_unreadable) {
-        eprintln!("exportpro: {}", lang.date_unreadable(&e.name));
+        eprintln!("exportx: {}", lang.date_unreadable(&e.name));
     }
     for e in &plan.entries {
         for n in &e.notes {
-            eprintln!("exportpro: {}", lang.note(&e.name, n));
+            eprintln!("exportx: {}", lang.note(&e.name, n));
         }
     }
     if cmd == "plan" {
@@ -221,7 +221,7 @@ fn run(cmd: &str, args: &[String], lang: Lang) -> Result<(), Failure> {
             ..saved
         };
         if let Err(e) = saved.save() {
-            eprintln!("exportpro: settings: {e}");
+            eprintln!("exportx: settings: {e}");
         }
     }
     for e in outcome.copied.iter().chain(&outcome.moved) {
@@ -229,7 +229,7 @@ fn run(cmd: &str, args: &[String], lang: Lang) -> Result<(), Failure> {
     }
     for (e, err) in &outcome.failed {
         eprintln!(
-            "exportpro: {}",
+            "exportx: {}",
             lang.failed_copy(&e.name, &e.dest, &lang.copy_failure(err))
         );
     }
@@ -263,7 +263,7 @@ fn run(cmd: &str, args: &[String], lang: Lang) -> Result<(), Failure> {
     }
 }
 
-/// `exportpro erase|undo <shoot folder>...`
+/// `exportx erase|undo <shoot folder>...`
 fn run_log_command(cmd: &str, args: &[String], lang: Lang) -> ExitCode {
     // `undo --run <id>`: move back the files of that move (`apply --move` prints it).
     let mut folders = args.to_vec();
@@ -272,14 +272,14 @@ fn run_log_command(cmd: &str, args: &[String], lang: Lang) -> ExitCode {
         && let Some(i) = folders.iter().position(|a| a == "--run")
     {
         if i + 1 >= folders.len() {
-            eprintln!("exportpro: {}", lang.needs_value("--run"));
+            eprintln!("exportx: {}", lang.needs_value("--run"));
             return ExitCode::FAILURE;
         }
         run = Some(folders.remove(i + 1));
         folders.remove(i);
     }
     if folders.is_empty() {
-        eprintln!("exportpro: {}\n{USAGE}", lang.needs_shoot_folders(cmd));
+        eprintln!("exportx: {}\n{USAGE}", lang.needs_shoot_folders(cmd));
         return ExitCode::FAILURE;
     }
     let mut ok = true;
@@ -301,7 +301,7 @@ fn run_log_command(cmd: &str, args: &[String], lang: Lang) -> ExitCode {
                     println!("{}", lang.done_line(verb, path));
                 }
                 for (path, why) in &outcome.kept {
-                    eprintln!("exportpro: {}", lang.kept(path, &lang.keep_reason(why)));
+                    eprintln!("exportx: {}", lang.kept(path, &lang.keep_reason(why)));
                 }
                 println!(
                     "{}",
@@ -311,7 +311,7 @@ fn run_log_command(cmd: &str, args: &[String], lang: Lang) -> ExitCode {
             }
             Err(e) => {
                 eprintln!(
-                    "exportpro: {}: {e}",
+                    "exportx: {}: {e}",
                     exportpro_core::log::path_in(&folder).display()
                 );
                 ok = false;

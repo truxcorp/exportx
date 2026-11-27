@@ -1,13 +1,13 @@
 [package]
 name = "exportpro-cli"
-description = "ExportPro in a terminal"
+description = "ExportX in a terminal"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
 [[bin]]
-name = "exportpro"
+name = "exportx"
 path = "src/main.rs"
 
 [dependencies]
