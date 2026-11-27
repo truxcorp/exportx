@@ -43,10 +43,11 @@ export async function launch({ lang = "fr_FR.UTF-8", settings = null, configDir 
     env,
     stdio: ["ignore", "ignore", "inherit"],
   });
-  const stop = () => {
-    driver.kill();
-    xvfb.kill();
-    rmSync(home, { recursive: true, force: true });
+  // Wait for tauri-driver and Xvfb to exit before removing the test home: the app may
+  // still be writing to it (ENOTEMPTY on rmdir); retries cover the last late writes.
+  const stop = async () => {
+    await Promise.all([exited(driver), exited(xvfb)]);
+    rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   };
   try {
     const socket = `/tmp/.X11-unix/X${display.slice(1)}`;
@@ -61,7 +62,7 @@ export async function launch({ lang = "fr_FR.UTF-8", settings = null, configDir 
     return session;
   } catch (e) {
     // Never leave Xvfb or tauri-driver behind: node --test would wait for them forever.
-    stop();
+    await stop();
     throw e;
   }
 }
@@ -77,7 +78,7 @@ class Session {
     try {
       await call(this.url, "DELETE", "");
     } finally {
-      this.stop();
+      await this.stop();
     }
   }
 
@@ -164,6 +165,19 @@ class Element {
   value() {
     return call(this.url, "GET", `/element/${this.id}/property/value`);
   }
+}
+
+/** Kill `child` and resolve once it has exited (SIGKILL after 5 s if SIGTERM isn't enough). */
+function exited(child) {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
+  return new Promise((resolve) => {
+    const force = setTimeout(() => child.kill("SIGKILL"), 5000);
+    child.once("exit", () => {
+      clearTimeout(force);
+      resolve();
+    });
+    child.kill();
+  });
 }
 
 function post(body) {
