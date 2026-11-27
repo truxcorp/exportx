@@ -481,3 +481,25 @@ fn moving_from_the_preview_then_undo_puts_the_files_back() {
     assert_eq!((undone.done, undone.kept.len()), (2, 0));
     assert_eq!(fs::read_to_string(d.src.join("a.jpg")).unwrap(), "a.jpg");
 }
+
+#[test]
+fn info_gives_the_version_and_the_formats_from_the_core() {
+    let info = commands::info();
+
+    assert_eq!(info.version, env!("CARGO_PKG_VERSION"));
+    assert_eq!(info.video_exts, exportpro_core::scan::VIDEO_EXTS);
+    assert_eq!(info.dated_exts, exportpro_core::dates::DATED_EXTS);
+}
+
+#[test]
+fn checking_for_updates_is_on_by_default_and_remembered_when_turned_off() {
+    let d = dirs();
+    commands::set_lang(&d.settings, Lang::Fr).unwrap();
+    assert!(commands::settings(&d.settings).checks_updates());
+
+    commands::set_check_updates(&d.settings, false).unwrap();
+
+    let saved = commands::settings(&d.settings);
+    assert!(!saved.checks_updates());
+    assert_eq!(saved.lang.as_deref(), Some("fr"), "the other settings stay");
+}

@@ -358,6 +358,20 @@ impl Lang {
         }
     }
 
+    /// The formats, for `--help` (the app's Information panel shows the same lists).
+    pub fn formats_help(self) -> String {
+        let videos = crate::scan::VIDEO_EXTS.join(", ");
+        let dated = crate::dates::DATED_EXTS.join(", ");
+        match self {
+            Lang::En => format!(
+                "Videos (video folder): {videos}\nEvery other file is copied as a photo, but a file sharing its base name with a video (IMG_1.THM next to IMG_1.MOV) goes with the video. Files without an extension are skipped.\nCapture date checked on: {dated}; other files: the date stored in them if found, else their file date."
+            ),
+            Lang::Fr => format!(
+                "Vidéos (dossier vidéo) : {videos}\nTout autre fichier est copié comme une photo, mais un fichier qui a le même nom de base qu'une vidéo (IMG_1.THM à côté de IMG_1.MOV) va avec la vidéo. Les fichiers sans extension sont ignorés.\nDate de prise de vue vérifiée sur : {dated} ; autres fichiers : la date qu'ils contiennent si elle est trouvée, sinon leur date de fichier."
+            ),
+        }
+    }
+
     /// `2 file(s) moved, 1 failed` (and the links copied, if any): the originals that
     /// moved are no longer in the source, unlike after a copy.
     pub fn moved_with_failures(self, moved: usize, copied: usize, failed: usize) -> String {

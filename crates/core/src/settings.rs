@@ -15,6 +15,8 @@ pub struct Settings {
     pub preset: Option<String>,
     /// "fr" or "en"; unset follows the system.
     pub lang: Option<String>,
+    /// The app looks for a new version at startup; unset means yes.
+    pub check_updates: Option<bool>,
 }
 
 /// `<config folder>/settings.toml`, e.g. `~/.config/exportpro/settings.toml` on Linux.
@@ -24,6 +26,11 @@ pub fn path() -> Option<PathBuf> {
 }
 
 impl Settings {
+    /// Whether the app looks for a new version at startup (yes unless turned off).
+    pub fn checks_updates(&self) -> bool {
+        self.check_updates.unwrap_or(true)
+    }
+
     /// The saved settings; defaults when there are none or they can't be read.
     pub fn load() -> Settings {
         path().map(|p| Settings::load_from(&p)).unwrap_or_default()

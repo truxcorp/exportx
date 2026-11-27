@@ -31,6 +31,9 @@ export function start(settings = {}) {
     canErase: false,
     canUndo: false,
     error: "",
+    // "options" or "info" when that panel is open, over whatever step.
+    panel: null,
+    checkUpdates: settings.check_updates !== false,
   };
 }
 
@@ -121,10 +124,16 @@ export function next(s, e) {
       return (s.step === "erased" || s.step === "result") && s.canUndo ? { ...s, step: "undoing" } : s;
     case "undone":
       return s.step === "undoing" ? { ...s, eraseOutcome: e.outcome, step: "done" } : s;
+    case "panel":
+      return { ...s, panel: s.panel === e.name ? null : e.name };
+    case "checkUpdates":
+      return { ...s, checkUpdates: e.on };
     case "back":
       return back(s);
     case "restart":
-      return { ...start({ dest: s.dest, prefix: s.prefix, preset: s.preset }) };
+      return {
+        ...start({ dest: s.dest, prefix: s.prefix, preset: s.preset, check_updates: s.checkUpdates }),
+      };
     default:
       return s;
   }

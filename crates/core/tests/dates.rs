@@ -97,3 +97,36 @@ fn a_restore_that_cannot_be_logged_is_explained_in_french() {
 
     assert!(text.contains("permission refusée"), "{text}");
 }
+
+/// What the Information panel and `--help` list as dated formats: each one has a real
+/// sample whose capture date is read.
+#[test]
+fn every_format_listed_as_dated_has_a_sample_whose_date_is_read() {
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("../cli/tests/fixtures");
+    let samples: Vec<std::path::PathBuf> = std::fs::read_dir(&fixtures)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.extension().is_some_and(|x| x != "md"))
+        .collect();
+
+    for ext in exportpro_core::dates::DATED_EXTS {
+        let sample = samples
+            .iter()
+            .find(|p| p.extension().is_some_and(|x| x == *ext))
+            .unwrap_or_else(|| panic!("no sample for .{ext}"));
+        assert!(
+            exportpro_core::capture_date(sample).is_some(),
+            "{}",
+            sample.display()
+        );
+    }
+    let mut listed: Vec<&str> = exportpro_core::dates::DATED_EXTS.to_vec();
+    listed.sort();
+    let mut sampled: Vec<String> = samples
+        .iter()
+        .map(|p| p.extension().unwrap().to_string_lossy().into_owned())
+        .collect();
+    sampled.sort();
+    sampled.dedup();
+    assert_eq!(listed, sampled, "every sample's format is listed");
+}

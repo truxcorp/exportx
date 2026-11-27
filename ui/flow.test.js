@@ -288,3 +288,19 @@ test("each step's command runs once, when the step starts, never again on a repe
   [c, cmd] = step(c, { type: "undo" });
   assert.equal(cmd, "undo");
 });
+
+test("the options and information panels open over any step and close again", () => {
+  let s = atDetails({ check_updates: false });
+  assert.equal(s.panel, null);
+  assert.equal(s.checkUpdates, false);
+  s = next(s, { type: "panel", name: "info" });
+  assert.equal(s.panel, "info");
+  assert.equal(s.step, "details");
+  s = next(s, { type: "panel", name: "options" });
+  assert.equal(s.panel, "options");
+  s = next(s, { type: "checkUpdates", on: true });
+  assert.equal(s.checkUpdates, true);
+  s = next(s, { type: "panel", name: "options" });
+  assert.equal(s.panel, null, "the same button closes it");
+  assert.equal(start({}).checkUpdates, true, "on unless turned off");
+});

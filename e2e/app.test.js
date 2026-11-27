@@ -232,3 +232,31 @@ test("on the same disk: move, then Ctrl+Z puts the files back (ADR 0006)", async
     await app.close();
   }
 });
+
+test("the information panel lists the formats; the options remember the update check", async () => {
+  const app = await launch({ lang: "fr_FR.UTF-8" });
+  try {
+    await app.click("[data-action=info]");
+    await app.waitText("Tout autre fichier est copié comme une photo");
+    const info = await app.text();
+    assert.match(info, /mov, mp4, m4v/);
+    assert.match(info, /cr3/);
+    await app.screenshot("9-info");
+    await app.click("[data-action=info]");
+    assert.ok(!(await app.text()).includes("Tout autre fichier"), "the same button closes it");
+
+    await app.click("[data-action=options]");
+    await app.waitText("Rechercher une nouvelle version au démarrage");
+    await app.screenshot("10-options");
+    await app.click("#check-updates");
+    // Saved asynchronously: wait for the file rather than read it at once.
+    const file = join(app.home, ".config/exportpro/settings.toml");
+    const saved = () => (existsSync(file) ? readFileSync(file, "utf8") : "");
+    for (let i = 0; i < 50 && !/check_updates = false/.test(saved()); i++) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    assert.match(saved(), /check_updates = false/);
+  } finally {
+    await app.close();
+  }
+});

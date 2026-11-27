@@ -36,6 +36,9 @@ Si la destination est sur le même disque que les fichiers, l'aperçu propose **
 originaux). Un déplacement s'annule d'un clic ou avec Ctrl+Z ; dans un terminal, `apply --move` affiche la
 commande qui l'annule (`exportpro undo --run <id> <dossier de la séance>`).
 
+Le bouton **i** liste les formats (vidéos, dates lues) ; **⚙** règle la langue et la recherche
+de nouvelle version au démarrage. `exportpro --help` donne les mêmes listes.
+
 Arborescences (`--preset`) :
 - `classique` (par défaut) : `AAAA/MM/JJ/<séance>/p|v/o/<ext>/`
 - `lisible` : `…/photo|video/originaux/<ext>/`

@@ -5,6 +5,12 @@ use std::path::Path;
 use chrono::{Datelike, Local, NaiveDateTime};
 use nom_exif::{ExifDateTime, ExifTag, Metadata, TrackInfoTag};
 
+/// Lower-case extensions whose capture date is read, each checked on a real sample
+/// (`crates/cli/tests/fixtures`). Other files are dated by their file time.
+pub const DATED_EXTS: &[&str] = &[
+    "jpg", "heic", "cr2", "cr3", "nef", "arw", "dng", "mov", "mp4",
+];
+
 /// The capture date stored in the file, in local time: EXIF `DateTimeOriginal` (else
 /// `CreateDate`) for photos, read as camera-local time; QuickTime/MP4 creation time for
 /// videos, stored in UTC and converted to the computer's time zone (dates before 1970 are

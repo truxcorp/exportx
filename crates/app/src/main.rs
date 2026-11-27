@@ -73,6 +73,16 @@ async fn erase(shoots: Vec<PathBuf>, lang: String) -> Result<LogOutcome, String>
 }
 
 #[tauri::command]
+fn set_check_updates(on: bool) -> Result<(), String> {
+    commands::set_check_updates(&settings_path()?, on)
+}
+
+#[tauri::command]
+fn info() -> commands::Info {
+    commands::info()
+}
+
+#[tauri::command]
 async fn undo_move(shoots: Vec<PathBuf>, run: String, lang: String) -> Result<LogOutcome, String> {
     tauri::async_runtime::spawn_blocking(move || {
         commands::undo_move(&shoots, &run, Lang::parse(&lang))
@@ -113,6 +123,8 @@ fn main() {
             erase,
             undo,
             undo_move,
+            info,
+            set_check_updates,
             open_folder,
             check_folder
         ])

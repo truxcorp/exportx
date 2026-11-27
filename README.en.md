@@ -34,6 +34,9 @@ no extra space) or **Copy** (the copies take as much room as the originals). A m
 with one click or Ctrl+Z; in a terminal, `apply --move` prints the command that undoes it
 (`exportpro undo --run <id> <shoot folder>`).
 
+The **i** button lists the formats (videos, dates read); **⚙** sets the language and the check
+for a new version at startup. `exportpro --help` gives the same lists.
+
 Tree layouts (`--preset`):
 - `classique` (default): `YYYY/MM/DD/<shoot>/p|v/o/<ext>/`
 - `lisible`: `…/photo|video/originaux/<ext>/`

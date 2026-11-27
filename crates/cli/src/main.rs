@@ -91,6 +91,8 @@ fn main() -> ExitCode {
         None | Some("-h" | "--help") => {
             println!("exportpro {}", env!("CARGO_PKG_VERSION"));
             println!("{USAGE}");
+            println!();
+            println!("{}", lang.formats_help());
             ExitCode::SUCCESS
         }
         Some(other) => {

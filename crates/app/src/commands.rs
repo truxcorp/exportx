@@ -314,6 +314,24 @@ pub fn undo_in(shoots: &[PathBuf], lang: Lang) -> LogOutcome {
     each_shoot(shoots, lang, exportpro_core::erase::undo)
 }
 
+/// What the Information panel shows: the version and the formats, from the core.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Info {
+    pub version: String,
+    /// Extensions that make a file (and the files sharing its base name) a video.
+    pub video_exts: Vec<&'static str>,
+    /// Extensions whose capture date is checked on a real sample.
+    pub dated_exts: Vec<&'static str>,
+}
+
+pub fn info() -> Info {
+    Info {
+        version: env!("CARGO_PKG_VERSION").to_owned(),
+        video_exts: exportpro_core::scan::VIDEO_EXTS.to_vec(),
+        dated_exts: exportpro_core::dates::DATED_EXTS.to_vec(),
+    }
+}
+
 /// Move back the files the move `run` moved into these shoot folders.
 pub fn undo_move(shoots: &[PathBuf], run: &str, lang: Lang) -> LogOutcome {
     each_shoot(shoots, lang, |shoot| {
@@ -367,6 +385,15 @@ pub fn lang(settings: &Settings, system: Option<&str>) -> Lang {
 pub fn set_lang(path: &Path, lang: Lang) -> Result<(), String> {
     let saved = Settings {
         lang: Some(lang.code().to_owned()),
+        ..Settings::load_from(path)
+    };
+    saved.save_to(path).map_err(|e| e.to_string())
+}
+
+/// Remember whether the app looks for a new version at startup.
+pub fn set_check_updates(path: &Path, on: bool) -> Result<(), String> {
+    let saved = Settings {
+        check_updates: Some(on),
         ..Settings::load_from(path)
     };
     saved.save_to(path).map_err(|e| e.to_string())

@@ -4,6 +4,33 @@
 export const STRINGS = {
   title: { fr: "ExportPro", en: "ExportPro" },
   lang_switch: { fr: "English", en: "Français" },
+  close: { fr: "Fermer", en: "Close" },
+  info_title: { fr: "Informations", en: "Information" },
+  info_videos: { fr: "Vidéos (dossier vidéo)", en: "Videos (video folder)" },
+  info_photos: {
+    fr: "Tout autre fichier est copié comme une photo. Les fichiers qui ont le même nom de base (IMG_1.CR2, IMG_1.JPG, IMG_1.XMP) gardent le même numéro et vont ensemble : avec une vidéo (IMG_1.THM à côté de IMG_1.MOV), dans le dossier vidéo. Les fichiers sans extension sont ignorés.",
+    en: "Every other file is copied as a photo. Files sharing a base name (IMG_1.CR2, IMG_1.JPG, IMG_1.XMP) keep one number and stay together: with a video (IMG_1.THM next to IMG_1.MOV), in the video folder. Files without an extension are skipped.",
+  },
+  info_dates: { fr: "Date de prise de vue", en: "Capture date" },
+  info_dates_text: {
+    fr: "Vérifiée sur : {exts}. Les autres fichiers prennent la date qu'ils contiennent si elle est trouvée, sinon leur date de fichier.",
+    en: "Checked on: {exts}. Other files take the date stored in them if found, else their file date.",
+  },
+  info_log: { fr: "Journal et annulation", en: "Log and undo" },
+  info_log_text: {
+    fr: "Chaque copie ou déplacement est noté dans exportpro.log, dans le dossier de la séance. Effacer les originaux les met à la corbeille, et Annuler les remet. Un déplacement s'annule d'un clic ou avec Ctrl+Z.",
+    en: "Each copy or move is written to exportpro.log in the shoot folder. Erasing the originals puts them in the Trash, and Undo brings them back. A move is undone with one click or Ctrl+Z.",
+  },
+  options_title: { fr: "Options", en: "Options" },
+  options_language: { fr: "Langue", en: "Language" },
+  options_updates: {
+    fr: "Rechercher une nouvelle version au démarrage",
+    en: "Check for a new version at startup",
+  },
+  options_updates_help: {
+    fr: "Demande à GitHub si une nouvelle version existe ; actif dès la première version publiée.",
+    en: "Asks GitHub whether a new version exists; active from the first published release.",
+  },
   back: { fr: "Retour", en: "Back" },
   next: { fr: "Continuer", en: "Continue" },
   choose_folder: { fr: "Choisir un dossier…", en: "Choose a folder…" },

@@ -46,3 +46,11 @@ fieldset.mode legend { padding: 0 4px; color: var(--muted); }
 label.option { font-weight: normal; margin: 0; display: flex; gap: 8px; align-items: baseline; cursor: pointer; }
 label.option.disabled { opacity: 0.55; cursor: default; }
 .hint { align-self: center; }
+header nav { display: flex; align-items: center; gap: 6px; }
+button.icon { width: 30px; height: 30px; padding: 0; border-radius: 50%; font-weight: 700; line-height: 1; }
+button.icon.open { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+section.panel { border: 1px solid var(--line); border-radius: 10px; padding: 4px 16px 12px; margin-bottom: 16px; display: grid; gap: 2px; }
+section.panel h3 { font-size: 0.95rem; margin: 10px 0 0; }
+section.panel p { margin: 4px 0; }
+section.panel .exts { font-family: ui-monospace, monospace; font-size: 0.9rem; }
+label.check { display: flex; gap: 8px; align-items: center; font-weight: normal; }

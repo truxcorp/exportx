@@ -12,11 +12,14 @@ let state = start({});
 let notice = "";
 // What was typed in the details form but not submitted yet: survives a re-render.
 let draft = {};
+// The version and formats the Information panel lists (from the core).
+let info = { version: "", video_exts: [], dated_exts: [] };
 const root = document.getElementById("app");
 
 async function init() {
   lang = await invoke("lang");
   state = start(await invoke("settings"));
+  info = await invoke("info");
   // Drag and drop a folder onto the window on the source and destination steps.
   await tauri.event.listen("tauri://drag-drop", (e) => {
     const path = e.payload.paths && e.payload.paths[0];
@@ -31,6 +34,8 @@ async function init() {
     if (undoKey && !typing && state.canUndo) {
       e.preventDefault();
       send({ type: "undo" });
+    } else if (e.key === "Escape" && state.panel && !e.defaultPrevented && !(e.target instanceof HTMLSelectElement)) {
+      send({ type: "panel", name: state.panel });
     }
   });
   render();
@@ -38,7 +43,8 @@ async function init() {
 
 /** Apply an event, run what the new step needs, re-render. */
 async function send(event) {
-  notice = "";
+  // Opening a panel leaves a notice on screen: it may be what the user wants to check.
+  if (event.type !== "panel" && event.type !== "checkUpdates") notice = "";
   if (event.type === "details" || event.type === "restart") draft = {};
   const before = state;
   state = next(state, event);
@@ -126,30 +132,98 @@ async function tryInvoke(cmd, args) {
   }
 }
 
+/** Switch the screens to `other` ("fr" or "en"), remembered for the next start. */
+async function switchLang(other) {
+  if (await tryInvoke("set_lang", { lang: other })) {
+    lang = other;
+    notice = "";
+    render();
+  }
+}
+
 function render() {
+  const panelButton = (name, symbol) =>
+    el(
+      "button",
+      {
+        class: state.panel === name ? "icon open" : "icon",
+        "data-action": name,
+        title: t(lang, `${name}_title`),
+        "aria-label": t(lang, `${name}_title`),
+        "aria-expanded": state.panel === name ? "true" : "false",
+        onclick: () => send({ type: "panel", name }),
+      },
+      symbol,
+    );
   const header = el(
     "header",
     {},
     el("h1", {}, t(lang, "title")),
     el(
-      "button",
-      {
-        class: "link",
-        "data-action": "lang",
-        onclick: async () => {
-          const other = lang === "fr" ? "en" : "fr";
-          if (await tryInvoke("set_lang", { lang: other })) {
-            lang = other;
-            notice = "";
-            render();
-          }
-        },
-      },
-      t(lang, "lang_switch"),
+      "nav",
+      {},
+      el(
+        "button",
+        { class: "link", "data-action": "lang", onclick: () => switchLang(lang === "fr" ? "en" : "fr") },
+        t(lang, "lang_switch"),
+      ),
+      panelButton("info", "i"),
+      panelButton("options", "⚙"),
     ),
   );
   const shown = notice ? el("p", { id: "notice", class: "error", role: "alert" }, notice) : "";
-  root.replaceChildren(header, shown, screen());
+  const panel = state.panel === "info" ? infoPanel() : state.panel === "options" ? optionsPanel() : "";
+  root.replaceChildren(header, shown, panel, screen());
+}
+
+function closeButton() {
+  return button("close", () => send({ type: "panel", name: state.panel }), false, {}, "close-panel");
+}
+
+function infoPanel() {
+  return el(
+    "section",
+    { class: "panel", id: "info-panel" },
+    el("h2", {}, t(lang, "info_title")),
+    el("p", {}, `ExportPro ${info.version}`),
+    el("h3", {}, t(lang, "info_videos")),
+    el("p", { class: "exts" }, info.video_exts.join(", ")),
+    el("p", {}, t(lang, "info_photos")),
+    el("h3", {}, t(lang, "info_dates")),
+    el("p", {}, t(lang, "info_dates_text", { exts: info.dated_exts.join(", ") })),
+    el("h3", {}, t(lang, "info_log")),
+    el("p", {}, t(lang, "info_log_text")),
+    el("div", { class: "actions" }, closeButton()),
+  );
+}
+
+function optionsPanel() {
+  const language = el(
+    "select",
+    { id: "language", onchange: (e) => switchLang(e.target.value) },
+    el("option", { value: "fr", selected: lang === "fr" }, "Français"),
+    el("option", { value: "en", selected: lang === "en" }, "English"),
+  );
+  const updates = el("input", {
+    type: "checkbox",
+    id: "check-updates",
+    checked: state.checkUpdates,
+    onchange: async (e) => {
+      const on = e.target.checked;
+      if (await tryInvoke("set_check_updates", { on })) send({ type: "checkUpdates", on });
+    },
+  });
+  return el(
+    "section",
+    { class: "panel", id: "options-panel" },
+    el("h2", {}, t(lang, "options_title")),
+    el("label", { for: "language" }, t(lang, "options_language")),
+    language,
+    el("label", { class: "check", for: "check-updates" }, updates, t(lang, "options_updates")),
+    el("small", {}, t(lang, "options_updates_help")),
+    el("p", {}, `ExportPro ${info.version}`),
+    el("div", { class: "actions" }, closeButton()),
+  );
 }
 
 function folderStep(step, titleKey, helpKey, value) {
