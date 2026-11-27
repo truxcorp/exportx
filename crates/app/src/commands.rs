@@ -457,11 +457,38 @@ pub fn check_update(
     bundle: Bundle,
 ) -> Result<Option<UpdateOffer>, String> {
     use exportpro_core::update;
-    Ok(update::check(url, current)?.map(|version| match bundle {
-        Bundle::AppImage | Bundle::MacApp => UpdateOffer::Install { version },
-        Bundle::Other => UpdateOffer::Link {
-            page: update::release_page(&version),
-            version,
-        },
+    Ok(update::check(url, current)?.map(|release| {
+        // The updater looks for `{os}-{arch}-{bundle}`, then `{os}-{arch}`.
+        let installable = bundle
+            .targets()
+            .iter()
+            .any(|t| release.platforms.contains(t));
+        let version = release.version;
+        if installable {
+            UpdateOffer::Install { version }
+        } else {
+            UpdateOffer::Link {
+                page: update::release_page(&version),
+                version,
+            }
+        }
     }))
+}
+
+impl Bundle {
+    /// The updater targets that would install on this computer, most precise first.
+    fn targets(self) -> Vec<String> {
+        // The updater's names for the processor (std's "x86" and "arm" differ).
+        let arch = match std::env::consts::ARCH {
+            "x86" => "i686",
+            "arm" => "armv7",
+            other => other,
+        };
+        let (os, kind) = match self {
+            Bundle::AppImage => ("linux", "appimage"),
+            Bundle::MacApp => ("darwin", "app"),
+            Bundle::Other => return Vec::new(),
+        };
+        vec![format!("{os}-{arch}-{kind}"), format!("{os}-{arch}")]
+    }
 }

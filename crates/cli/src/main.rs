@@ -116,9 +116,9 @@ fn main() -> ExitCode {
 fn update_check(lang: Lang) -> ExitCode {
     let current = env!("CARGO_PKG_VERSION");
     match exportpro_core::update::check(&exportpro_core::update::endpoint(), current) {
-        Ok(Some(version)) => {
-            let page = exportpro_core::update::release_page(&version);
-            println!("{}", lang.update_available(&version, &page));
+        Ok(Some(release)) => {
+            let page = exportpro_core::update::release_page(&release.version);
+            println!("{}", lang.update_available(&release.version, &page));
             ExitCode::SUCCESS
         }
         Ok(None) => {

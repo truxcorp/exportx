@@ -35,11 +35,21 @@ pub fn endpoint() -> String {
         .unwrap_or_else(|| ENDPOINT.to_owned())
 }
 
-/// The latest release's version, read from the `latest.json` at `url`; why not otherwise.
-pub fn latest(url: &str) -> Result<String, String> {
+/// The latest release, as `latest.json` describes it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Release {
+    pub version: String,
+    /// The updater targets it has files for (`linux-x86_64-appimage`, `darwin-aarch64-app`).
+    pub platforms: Vec<String>,
+}
+
+/// The latest release, read from the `latest.json` at `url`; why not otherwise.
+pub fn latest(url: &str) -> Result<Release, String> {
     #[derive(serde::Deserialize)]
     struct Manifest {
         version: String,
+        #[serde(default)]
+        platforms: std::collections::BTreeMap<String, serde_json::Value>,
     }
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(std::time::Duration::from_secs(15)))
@@ -55,12 +65,15 @@ pub fn latest(url: &str) -> Result<String, String> {
     let manifest: Manifest = serde_json::from_str(&text).map_err(|e| e.to_string())?;
     let version = manifest.version.trim().trim_start_matches('v').to_owned();
     parse(&version)
-        .map(|_| version)
+        .map(|_| Release {
+            version,
+            platforms: manifest.platforms.into_keys().collect(),
+        })
         .ok_or_else(|| format!("unreadable version {:?}", manifest.version))
 }
 
-/// The newer release's version if one is out, compared with `current`.
-pub fn check(url: &str, current: &str) -> Result<Option<String>, String> {
+/// The newer release if one is out, compared with `current`.
+pub fn check(url: &str, current: &str) -> Result<Option<Release>, String> {
     let latest = latest(url)?;
-    Ok(newer(current, &latest).then_some(latest))
+    Ok(newer(current, &latest.version).then_some(latest))
 }
