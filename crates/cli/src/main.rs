@@ -93,6 +93,10 @@ fn main() -> ExitCode {
             }
         },
         Some(cmd @ ("erase" | "undo")) => run_log_command(cmd, &args[1..], lang),
+        Some("-V" | "--version" | "update-check") if args.len() > 1 => {
+            eprintln!("exportx: {}\n{USAGE}", lang.unknown_option(&args[1]));
+            ExitCode::FAILURE
+        }
         Some("-V" | "--version") => {
             println!("exportx {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
