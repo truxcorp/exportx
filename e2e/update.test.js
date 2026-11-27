@@ -5,12 +5,20 @@ import { createServer } from "node:http";
 import { setTimeout as sleep } from "node:timers/promises";
 import { launch } from "./driver.js";
 
-/** A local update endpoint serving `latest.json` for `version`; counts its requests. */
+/** A local update endpoint serving `latest.json` for `version`, with an AppImage for this
+ * computer whose signature is wrong (what a tampered file looks like); counts its requests. */
 async function endpoint(version = "99.0.0") {
   const server = createServer((req, res) => {
+    if (req.url === "/ExportX.AppImage") {
+      res.writeHead(200, { "content-type": "application/octet-stream" });
+      res.end("not the real AppImage");
+      return;
+    }
     server.requests++;
+    const arch = { x64: "x86_64", arm64: "aarch64" }[process.arch];
+    const file = { url: `http://127.0.0.1:${server.address().port}/ExportX.AppImage`, signature: "bm90IGEgc2lnbmF0dXJl" };
     res.writeHead(200, { "content-type": "application/json" });
-    res.end(JSON.stringify({ version, notes: "", platforms: {} }));
+    res.end(JSON.stringify({ version, notes: "", platforms: { [`linux-${arch}-appimage`]: file } }));
   });
   server.requests = 0;
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -92,6 +100,21 @@ test("a manual check with nothing newer says the app is up to date", async () =>
     await app.click("[data-action=options]");
     await app.click("#check-now");
     await app.waitText("is up to date");
+  } finally {
+    await app.close();
+    server.close();
+  }
+});
+
+test("U4: an update whose signature is wrong is not installed, and the banner says why", async () => {
+  const server = await endpoint();
+  const app = await launch({ env: { EXPORTX_UPDATE_URL: server.url, EXPORTX_BUNDLE: "appimage" } });
+  try {
+    await app.waitText("Version 99.0.0 disponible");
+    await app.click("[data-action=update]");
+    await app.find("#update-message");
+    await app.waitText("la mise à jour a échoué");
+    assert.equal(await app.attribute("[data-action=update]", "disabled"), null, "can be tried again");
   } finally {
     await app.close();
     server.close();
