@@ -16,9 +16,9 @@ their behaviour (`tests/test_exportpro.sh` is the reference).
 - Copy only; erasing originals is a separate, undoable step: ADR 0003.
 - Configurable tree layout (`p|v` → `photo|video`, …): ADR 0004: every path part is a variable; numbers zero-padded (`txo_0001`).
 - UI and CLI in French and English; the system language picks the default.
-- CI: **Linux only, on the truxcorp org's self-hosted Linux runners** (`ci.runner_labels`
-  in `.workflow.yml`). If jobs don't get picked up or fail for runner reasons, stop and
-  ask the human; don't switch to GitHub-hosted runners on your own.
+- CI: **Linux only**, first on the org's self-hosted runners; since the repo went public
+  (2026-11-27), on GitHub-hosted runners (`ci.runner_labels` in `.workflow.yml`): a
+  public repo never gets a self-hosted runner.
   GitHub-hosted macOS / Windows runners come after the MVP, so the first Mac test
   happens after the MVP too.
 - Dev environment: one `Containerfile` on `ubuntu:26.04` (Rust, Node, Tauri Linux libs,

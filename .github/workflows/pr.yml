@@ -1,8 +1,8 @@
 name: pr
 # The only PR workflow (workflow kit, ci module). Thin on purpose: `make ci` builds the
 # Containerfile image and runs lint, typecheck, unit tests and security in it, so the same
-# checks run on a laptop and the CI host stays replaceable. Linux only, on the truxcorp
-# self-hosted runners (RUNNER_LABELS repo variable). No secrets in this workflow.
+# checks run on a laptop and the CI host stays replaceable. Linux only, on GitHub-hosted
+# runners (RUNNER_LABELS repo variable; public repo, so never self-hosted). No secrets here.
 on:
   pull_request:
 permissions:
