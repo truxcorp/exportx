@@ -19,10 +19,22 @@ pub struct Settings {
     pub check_updates: Option<bool>,
 }
 
-/// `<config folder>/settings.toml`, e.g. `~/.config/exportpro/settings.toml` on Linux.
+/// `<config folder>/settings.toml`, e.g. `~/.config/exportx/settings.toml` on Linux. The
+/// first time, the settings ExportPro saved (`~/.config/exportpro/`) are copied there.
 pub fn path() -> Option<PathBuf> {
-    directories::ProjectDirs::from("", "", "ExportPro")
-        .map(|d| d.config_dir().join("settings.toml"))
+    let at = |name| {
+        directories::ProjectDirs::from("", "", name).map(|d| d.config_dir().join("settings.toml"))
+    };
+    let path = at("ExportX")?;
+    if let Some(old) = at("ExportPro")
+        && !path.exists()
+        && old.is_file()
+        && let Some(parent) = path.parent()
+    {
+        // Not copied: the defaults then, as with no settings at all.
+        let _ = fs::create_dir_all(parent).and_then(|()| fs::copy(&old, &path));
+    }
+    Some(path)
 }
 
 impl Settings {
