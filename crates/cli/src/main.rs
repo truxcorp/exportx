@@ -6,6 +6,8 @@
 //!
 //!   exportpro erase|undo <shoot folder>...
 //!
+//! Every command takes `--lang fr|en`; the default follows LC_ALL, LC_MESSAGES, LANG.
+//!
 //! Exit status: 0 done, 1 error, 2 the files span several days: they are listed, choose
 //! one with --date or --split.
 
@@ -13,18 +15,27 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use chrono::NaiveDate;
-use exportpro_core::{DateChoice, Layout, LayoutError, Plan, PlanError, Request, Template};
+use exportpro_core::{DateChoice, Lang, Layout, Plan, Request, Settings, Template};
 
 const DEFAULT_PREFIX: &str = "txo";
 const USAGE: &str = "usage: exportpro plan|apply --source <dir> --dest <dir> --shoot <name> [--prefix <p>] \
 [--date YYYY-MM-DD | --split | --no-date] [--preset classique|lisible] \
-[--shoot-path <template>] [--file-path <template>]\n       \
-exportpro erase|undo <shoot folder>...";
+[--shoot-path <template>] [--file-path <template>] [--lang fr|en]\n       \
+exportpro erase|undo <shoot folder>... [--lang fr|en]";
 
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    // `--lang fr|en` anywhere switches the language; else the environment's.
+    let lang = match args.iter().position(|a| a == "--lang") {
+        Some(i) if i + 1 < args.len() => {
+            let tag = args.remove(i + 1);
+            args.remove(i);
+            Lang::parse(&tag)
+        }
+        _ => Lang::from_env(),
+    };
     match args.first().map(String::as_str) {
-        Some(cmd @ ("plan" | "apply")) => match run(cmd, &args[1..]) {
+        Some(cmd @ ("plan" | "apply")) => match run(cmd, &args[1..], lang) {
             Ok(()) => ExitCode::SUCCESS,
             Err(Failure::Error(msg)) => {
                 eprintln!("exportpro: {msg}");
@@ -32,15 +43,13 @@ fn main() -> ExitCode {
             }
             Err(Failure::ChooseDay(days)) => {
                 for (day, n) in days {
-                    println!("{day}: {n} file{}", if n == 1 { "" } else { "s" });
+                    println!("{}", lang.day_count(day, n));
                 }
-                eprintln!(
-                    "exportpro: the files span several days: choose one with --date, or --split to give each day its folder"
-                );
+                eprintln!("exportpro: {}", lang.several_days());
                 ExitCode::from(2)
             }
         },
-        Some(cmd @ ("erase" | "undo")) => run_log_command(cmd, &args[1..]),
+        Some(cmd @ ("erase" | "undo")) => run_log_command(cmd, &args[1..], lang),
         None | Some("-h" | "--help") => {
             println!("exportpro {}", env!("CARGO_PKG_VERSION"));
             println!("{USAGE}");
@@ -120,13 +129,16 @@ fn layout(
     preset: &Option<String>,
     shoot_path: &Option<String>,
     file_path: &Option<String>,
+    lang: Lang,
 ) -> Result<Layout, Failure> {
     let mut layout = match preset {
         None => Layout::default(),
-        Some(name) => Layout::preset(name)
-            .ok_or_else(|| format!("unknown preset {name:?} (classique, lisible)"))?,
+        Some(name) => Layout::preset(name).ok_or_else(|| match lang {
+            Lang::En => format!("unknown preset {name:?} (classique, lisible)"),
+            Lang::Fr => format!("préréglage inconnu {name:?} (classique, lisible)"),
+        })?,
     };
-    let bad = |e: LayoutError| Failure::Error(format!("invalid tree: {e}"));
+    let bad = |e: exportpro_core::LayoutError| Failure::Error(lang.layout_error(&e));
     if let Some(t) = shoot_path {
         layout.shoot = Template::parse(t).map_err(|e| bad(e.into()))?;
     }
@@ -137,8 +149,8 @@ fn layout(
     Ok(layout)
 }
 
-fn run(cmd: &str, args: &[String]) -> Result<(), Failure> {
-    let (plan, req) = make_plan(args)?;
+fn run(cmd: &str, args: &[String], lang: Lang) -> Result<(), Failure> {
+    let (plan, req) = make_plan(args, lang)?;
     if cmd == "plan" {
         for e in &plan.entries {
             println!("{} -> {}", e.name, e.dest.display());
@@ -146,36 +158,43 @@ fn run(cmd: &str, args: &[String]) -> Result<(), Failure> {
         return Ok(());
     }
     let outcome = exportpro_core::apply(&plan, &req);
+    if !outcome.copied.is_empty() {
+        let saved = Settings {
+            dest: Some(req.dest.clone()),
+            prefix: Some(req.prefix.clone()),
+            ..Settings::load()
+        };
+        // A preset is remembered; custom templates on the command line are not.
+        let saved = Settings {
+            preset: preset_used(args).or(saved.preset),
+            ..saved
+        };
+        if let Err(e) = saved.save() {
+            eprintln!("exportpro: settings: {e}");
+        }
+    }
     for e in &outcome.copied {
         println!("{} -> {}", e.name, e.dest.display());
     }
     for (e, err) in &outcome.failed {
-        eprintln!(
-            "exportpro: FAILED {} -> {}: {err}",
-            e.name,
-            e.dest.display()
-        );
+        eprintln!("exportpro: {}", lang.failed_copy(&e.name, &e.dest, err));
     }
     for log in &outcome.logs {
         println!("log: {}", log.display());
     }
     if outcome.failed.is_empty() {
-        println!(
-            "{} file(s) copied; the originals are untouched",
-            outcome.copied.len()
-        );
+        println!("{}", lang.copied(outcome.copied.len()));
         Ok(())
     } else {
-        Err(Failure::Error(format!(
-            "{} file(s) copied, {} failed; the originals are untouched",
+        Err(Failure::Error(lang.copied_with_failures(
             outcome.copied.len(),
-            outcome.failed.len()
+            outcome.failed.len(),
         )))
     }
 }
 
 /// `exportpro erase|undo <shoot folder>...`
-fn run_log_command(cmd: &str, folders: &[String]) -> ExitCode {
+fn run_log_command(cmd: &str, folders: &[String], lang: Lang) -> ExitCode {
     if folders.is_empty() {
         eprintln!("exportpro: {cmd} needs the shoot folder(s) holding exportpro.log\n{USAGE}");
         return ExitCode::FAILURE;
@@ -191,20 +210,19 @@ fn run_log_command(cmd: &str, folders: &[String]) -> ExitCode {
         match result {
             Ok(outcome) => {
                 let verb = if cmd == "erase" {
-                    "moved to the Trash"
+                    lang.erased()
                 } else {
-                    "restored"
+                    lang.restored()
                 };
                 for path in &outcome.done {
-                    println!("{verb}: {}", path.display());
+                    println!("{}", lang.done_line(verb, path));
                 }
                 for (path, why) in &outcome.kept {
-                    eprintln!("exportpro: kept {}: {why}", path.display());
+                    eprintln!("exportpro: {}", lang.kept(path, why));
                 }
                 println!(
-                    "{} file(s) {verb}, {} kept",
-                    outcome.done.len(),
-                    outcome.kept.len()
+                    "{}",
+                    lang.summary(outcome.done.len(), verb, outcome.kept.len())
                 );
                 ok &= outcome.kept.is_empty();
             }
@@ -221,10 +239,36 @@ fn run_log_command(cmd: &str, folders: &[String]) -> ExitCode {
     }
 }
 
-fn make_plan(args: &[String]) -> Result<(Plan, Request), Failure> {
-    let a = parse_plan(args)?;
+/// The preset of a run, when it used no custom template.
+fn preset_used(args: &[String]) -> Option<String> {
+    let a = parse_plan(args).ok()?;
+    let saved = Settings::load();
+    if a.shoot_path.is_some() || a.file_path.is_some() {
+        return None;
+    }
+    Some(
+        a.preset
+            .or(saved.preset)
+            .unwrap_or_else(|| "classique".into()),
+    )
+}
+
+fn make_plan(args: &[String], lang: Lang) -> Result<(Plan, Request), Failure> {
+    let mut a = parse_plan(args)?;
+    // Options left out come from the last copy.
+    let saved = Settings::load();
+    a.dest = a.dest.or(saved.dest);
+    a.prefix = a.prefix.or(saved.prefix);
+    // Custom templates start from classique, whatever was remembered: the same command
+    // line always builds the same tree.
+    if a.shoot_path.is_none() && a.file_path.is_none() {
+        a.preset = a.preset.or(saved.preset);
+    }
     let source = a.source.ok_or("--source is required")?;
     let dest = a.dest.ok_or("--dest is required")?;
+    // Absolute, so the remembered destination means the same folder from anywhere.
+    let dest =
+        std::path::absolute(&dest).map_err(|e| Failure::Error(lang.cannot_read(&dest, &e)))?;
     let req = Request {
         dest,
         shoot: a.shoot.ok_or("--shoot is required")?,
@@ -236,34 +280,13 @@ fn make_plan(args: &[String]) -> Result<(Plan, Request), Failure> {
             (None, false, false) => DateChoice::Files,
             _ => return Err("--date, --split and --no-date exclude each other".into()),
         },
-        layout: layout(&a.preset, &a.shoot_path, &a.file_path)?,
+        layout: layout(&a.preset, &a.shoot_path, &a.file_path, lang)?,
     };
-    let groups = exportpro_core::scan(&source)
-        .map_err(|e| format!("cannot read {}: {e}", source.display()))?;
+    let groups =
+        exportpro_core::scan(&source).map_err(|e| Failure::Error(lang.cannot_read(&source, &e)))?;
     let plan = exportpro_core::plan(&groups, &req).map_err(|e| match e {
-        PlanError::NoFiles => Failure::Error(format!("no files to sort in {}", source.display())),
-        PlanError::SeveralDays(days) => Failure::ChooseDay(days),
-        PlanError::Exists(dest) => Failure::Error(format!(
-            "{} already exists: nothing was planned",
-            dest.display()
-        )),
-        PlanError::InvalidName { name, problem } => {
-            Failure::Error(format!("invalid name {name:?}: {problem}"))
-        }
-        PlanError::SameDestination {
-            first,
-            second,
-            dest,
-            only_case,
-        } => Failure::Error(format!(
-            "{first} and {second} would both go to {}{}",
-            dest.display(),
-            if only_case {
-                " (names differing only by case are one file on macOS and Windows)"
-            } else {
-                ""
-            }
-        )),
+        exportpro_core::PlanError::SeveralDays(days) => Failure::ChooseDay(days),
+        e => Failure::Error(lang.plan_error(&e, &source)),
     })?;
     Ok((plan, req))
 }

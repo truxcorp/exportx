@@ -10,7 +10,7 @@ IMAGE ?= localhost/exportpro-dev:$(shell cat Containerfile rust-toolchain.toml |
 AS_ME = --user "$$(id -u):$$(id -g)" $(if $(filter podman,$(notdir $(CONTAINER))),--userns=keep-id)
 T ?= lint typecheck test-unit security
 
-.PHONY: lint typecheck test-unit test-integration security hooks image box run ci
+.PHONY: lint typecheck test-unit test-integration security hooks image box run ci bundle
 
 ## lint: rustfmt check and clippy (warnings fail)
 lint:
@@ -21,9 +21,10 @@ lint:
 typecheck:
 	cargo check --workspace --all-targets --locked
 
-## test-unit: Rust tests, the bash version's tests and the guard hook's tests
+## test-unit: Rust tests, the app's JS tests, the bash version's tests and the guard hook's tests
 test-unit:
 	cargo test --workspace --locked
+	node --test ui/*.test.js
 	bash tests/test_exportpro.sh
 	bash tests/test_guard.sh
 
@@ -34,6 +35,11 @@ test-integration:
 ## security: gitleaks, semgrep, trivy; high or worse fails
 security:
 	scripts/security.sh
+
+## bundle: the Linux app packages (AppImage, .deb); in the image (make box T=bundle) they land in target/box/release/bundle
+bundle:
+	npm ci --no-audit --no-fund
+	APPIMAGE_EXTRACT_AND_RUN=1 NO_STRIP=true npx tauri build --bundles appimage,deb
 
 ## hooks: once per clone: gitleaks on each commit, lint/typecheck/unit before each push
 hooks:

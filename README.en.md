@@ -64,4 +64,8 @@ A cross-platform app (Tauri v2, Rust core) is being built next to the script:
 make hooks                  # once per clone
 make lint typecheck test-unit
 make ci                     # everything, security included, in the Containerfile image (podman)
+make box T=bundle           # the Linux app: target/box/release/bundle/{appimage,deb}
 ```
+
+The same features in a terminal: `exportpro plan|apply --source <card> --dest <photos> --shoot <name>`,
+then `exportpro erase <shoot folder>` (to the Trash) and `exportpro undo <shoot folder>`.

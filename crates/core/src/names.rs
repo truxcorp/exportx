@@ -18,16 +18,7 @@ pub enum NameProblem {
 
 impl fmt::Display for NameProblem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            NameProblem::Empty => write!(f, "it is empty"),
-            NameProblem::ForbiddenChar(c) if c.is_control() => {
-                write!(f, "it contains a control character")
-            }
-            NameProblem::ForbiddenChar(c) => write!(f, "it contains {c:?}"),
-            NameProblem::ReservedOnWindows => write!(f, "it is reserved on Windows"),
-            NameProblem::TrailingDotOrSpace => write!(f, "it ends with a dot or a space"),
-            NameProblem::LeadingDot => write!(f, "it starts with a dot"),
-        }
+        f.write_str(&crate::i18n::Lang::En.name_problem(*self))
     }
 }
 

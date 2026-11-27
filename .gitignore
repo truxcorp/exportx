@@ -2,3 +2,5 @@
 .env.*
 !.env.example
 /target/
+/crates/app/gen/
+/node_modules/

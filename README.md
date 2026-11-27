@@ -69,4 +69,8 @@ Une application multiplateforme (Tauri v2, cœur en Rust) se construit à côté
 make hooks                  # une fois par clone
 make lint typecheck test-unit
 make ci                     # tout, sécurité comprise, dans l'image du Containerfile (podman)
+make box T=bundle           # l'application Linux : target/box/release/bundle/{appimage,deb}
 ```
+
+Les mêmes fonctions dans un terminal : `exportpro plan|apply --source <carte> --dest <photos> --shoot <nom>`,
+puis `exportpro erase <dossier de la séance>` (vers la corbeille) et `exportpro undo <dossier de la séance>`.

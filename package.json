@@ -1,0 +1,12 @@
+{
+  "name": "exportpro",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test ui/*.test.js",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.6"
+  }
+}

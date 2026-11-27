@@ -1,0 +1,38 @@
+:root {
+  color-scheme: light dark;
+  --accent: #1f4e79;
+  --accent-text: #fff;
+  --muted: #6b7280;
+  --error: #b42318;
+  --line: color-mix(in srgb, currentColor 18%, transparent);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 15px;
+  line-height: 1.45;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --accent: #6aa6dc; --accent-text: #0b1b2b; --error: #f97066; }
+}
+body { margin: 0; }
+main { max-width: 720px; margin: 0 auto; padding: 16px 24px 32px; }
+header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
+h1 { font-size: 1.2rem; margin: 12px 0; }
+h2 { font-size: 1.1rem; margin: 8px 0 12px; }
+section.drop { border: 2px dashed var(--line); border-radius: 12px; padding: 24px; text-align: center; }
+.path { font-family: ui-monospace, monospace; word-break: break-all; }
+form { display: grid; gap: 4px; }
+label { margin-top: 10px; font-weight: 600; }
+input, select { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; }
+small { color: var(--muted); }
+button { font: inherit; padding: 7px 14px; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: inherit; cursor: pointer; }
+button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+button.link { border: none; text-decoration: underline; padding: 4px; }
+.actions, .choices, .question { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.question { align-items: center; border-top: 1px solid var(--line); padding-top: 12px; }
+.question p { flex-basis: 100%; margin: 0 0 4px; }
+.error { color: var(--error); }
+.safe { color: var(--muted); }
+.busy { font-style: italic; }
+progress { width: 100%; }
+table.preview { width: 100%; border-collapse: collapse; font-family: ui-monospace, monospace; font-size: 0.85rem; display: block; max-height: 320px; overflow: auto; }
+table.preview td { padding: 2px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+section.drop .actions { justify-content: center; }

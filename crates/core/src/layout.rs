@@ -50,15 +50,7 @@ pub enum TemplateError {
 
 impl fmt::Display for TemplateError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            TemplateError::UnknownToken(t) => {
-                write!(
-                    f,
-                    "unknown token {{{t}}} (numbers: {{n}} to {{n:{MAX_WIDTH}}})"
-                )
-            }
-            TemplateError::Unclosed => write!(f, "a {{ is not closed"),
-        }
+        f.write_str(&crate::i18n::Lang::En.template_error(self))
     }
 }
 
@@ -346,19 +338,7 @@ pub enum LayoutError {
 
 impl fmt::Display for LayoutError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            LayoutError::Template(e) => e.fmt(f),
-            LayoutError::FileNameWithout(token) => {
-                write!(f, "the file name must contain {token}")
-            }
-            LayoutError::ShootPathWith(Token::Number { .. }) => {
-                write!(f, "the shoot path can't contain {{n}}")
-            }
-            LayoutError::ShootPathWith(t) => write!(f, "the shoot path can't contain {t}"),
-            LayoutError::ShootPathWithout => write!(f, "the shoot path must contain {{shoot}}"),
-            LayoutError::Absolute(t) => write!(f, "{t} is an absolute path"),
-            LayoutError::ParentDir(t) => write!(f, "{t} contains . or .."),
-        }
+        f.write_str(&crate::i18n::Lang::En.layout_error(self))
     }
 }
 

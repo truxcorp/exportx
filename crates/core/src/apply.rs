@@ -23,9 +23,19 @@ pub struct Outcome {
 /// `exportpro.log`, then create the empty folders for edited files. Originals are never
 /// touched; a failed copy is removed, reported and logged, and the others go on.
 pub fn apply(plan: &Plan, req: &Request) -> Outcome {
+    apply_with_progress(plan, req, |_, _| {})
+}
+
+/// `apply`, calling `progress(done, total)` after each file.
+pub fn apply_with_progress(
+    plan: &Plan,
+    req: &Request,
+    mut progress: impl FnMut(usize, usize),
+) -> Outcome {
     let layout = LayoutRecord::from(&req.layout);
     let mut outcome = Outcome::default();
-    for e in &plan.entries {
+    let total = plan.entries.len();
+    for (i, e) in plan.entries.iter().enumerate() {
         let log = req.dest.join(&e.shoot).join(crate::log::LOG_NAME);
         let dest = req.dest.join(&e.dest);
         let (line, copy_error) = match copy_verified(&e.source, &dest) {
@@ -50,6 +60,7 @@ pub fn apply(plan: &Plan, req: &Request) -> Outcome {
         if log.exists() && !outcome.logs.contains(&log) {
             outcome.logs.push(log);
         }
+        progress(i + 1, total);
     }
     for dir in &plan.edited {
         if let Err(err) = fs::create_dir_all(req.dest.join(dir)) {

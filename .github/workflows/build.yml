@@ -1,0 +1,29 @@
+name: build
+# Unsigned Linux packages of the desktop app (AppImage, .deb) on every merge to main and
+# on demand, kept as workflow artifacts. macOS and Windows builds come after the MVP
+# (docs/plan/tauri-prototype.md). Thin: make builds them in the Containerfile image.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  linux:
+    runs-on: ${{ fromJSON(vars.RUNNER_LABELS || '"ubuntu-26.04"') }}
+    timeout-minutes: 40             # image build ~6 min when not cached, release build ~5 min
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: make box T=bundle
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: exportpro-linux
+          path: |
+            target/box/release/bundle/appimage/*.AppImage
+            target/box/release/bundle/deb/*.deb
+          if-no-files-found: error

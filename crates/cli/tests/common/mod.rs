@@ -91,9 +91,12 @@ pub fn exportpro_with(env: &[(&str, &str)], args: &[&str]) -> Output {
 
 /// Like `exportpro_with`, from the working folder `cwd`.
 pub fn exportpro_in(cwd: &Path, env: &[(&str, &str)], args: &[&str]) -> Output {
+    // Each run gets its own empty config folder (remembered settings) unless `env` names one.
+    let config = tempfile::tempdir().unwrap();
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_exportpro"));
     cmd.current_dir(cwd);
     cmd.args(args).env("TZ", "UTC").env("LANG", "en_US.UTF-8");
+    cmd.env("XDG_CONFIG_HOME", config.path());
     for (k, v) in env {
         cmd.env(k, v);
     }
