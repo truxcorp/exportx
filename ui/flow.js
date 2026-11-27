@@ -72,11 +72,17 @@ export function next(s, e) {
         ? {
             ...s,
             step: "copying",
-            progress: { done: 0, total: s.entries.filter((e) => !e.already).length },
+            progress: {
+              files_done: 0,
+              files_total: s.entries.filter((e) => !e.already).length,
+              bytes_done: 0,
+              bytes_total: 0,
+              text: "",
+            },
           }
         : s;
     case "progress":
-      return s.step === "copying" ? { ...s, progress: { done: e.done, total: e.total } } : s;
+      return s.step === "copying" ? { ...s, progress: e.line } : s;
     case "copied":
       if (s.step !== "copying") return s;
       return {

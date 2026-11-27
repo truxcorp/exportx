@@ -9,6 +9,7 @@ pub mod layout;
 pub mod log;
 pub mod names;
 pub mod plan;
+pub mod progress;
 pub mod scan;
 pub mod settings;
 
@@ -18,5 +19,6 @@ pub use i18n::Lang;
 pub use layout::{Layout, LayoutError, Template};
 pub use names::{NameProblem, check_name};
 pub use plan::{Already, DateChoice, Entry, Note, Plan, PlanError, Request, days, plan};
+pub use progress::Progress;
 pub use scan::{Group, Kind, SourceFile, scan};
 pub use settings::Settings;

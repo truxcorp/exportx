@@ -39,7 +39,7 @@ async function send(event) {
       send({ type: "planned", result });
     } else if (state.step === "copying" && event.type === "confirm") {
       const progress = new tauri.core.Channel();
-      progress.onmessage = ([done, total]) => send({ type: "progress", done, total });
+      progress.onmessage = (line) => send({ type: "progress", line });
       const outcome = await invoke("apply", {
         req: planRequest(state),
         expected: state.entries,
@@ -188,12 +188,16 @@ function screen() {
     case "preview":
       return preview();
     case "copying": {
-      const p = state.progress || { done: 0, total: 0 };
+      const p = state.progress || { files_done: 0, files_total: 0, bytes_done: 0, bytes_total: 0 };
+      // By bytes; by files when every file is empty.
+      const [value, max] =
+        p.bytes_total > 0 ? [p.bytes_done, p.bytes_total] : [p.files_done, p.files_total];
       return el(
         "section",
         {},
-        el("p", { class: "busy" }, t(lang, "copying", p)),
-        el("progress", { value: p.done, max: p.total || 1 }),
+        el("p", { class: "busy" }, t(lang, "copying")),
+        el("progress", { value, max: max || 1 }),
+        el("p", { class: "progress-line" }, p.text || ""),
       );
     }
     case "result":

@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 
 use exportpro_app::commands::{
-    self, ApplyOutcome, LogOutcome, PlanRequest, PlanResult, PlannedFile,
+    self, ApplyOutcome, LogOutcome, PlanRequest, PlanResult, PlannedFile, ProgressLine,
 };
 use exportpro_core::{Lang, Settings};
 use tauri::ipc::Channel;
@@ -50,19 +50,13 @@ async fn apply(
     req: PlanRequest,
     expected: Vec<PlannedFile>,
     lang: String,
-    progress: Channel<(usize, usize)>,
+    progress: Channel<ProgressLine>,
 ) -> Result<ApplyOutcome, String> {
     let settings = settings_path()?;
     tauri::async_runtime::spawn_blocking(move || {
-        commands::apply(
-            &req,
-            &expected,
-            Lang::parse(&lang),
-            &settings,
-            |done, total| {
-                let _ = progress.send((done, total));
-            },
-        )
+        commands::apply(&req, &expected, Lang::parse(&lang), &settings, |line| {
+            let _ = progress.send(line);
+        })
     })
     .await
     .map_err(|e| e.to_string())?

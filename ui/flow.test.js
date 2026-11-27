@@ -106,8 +106,9 @@ test("confirming the preview copies, then shows the result", () => {
   s = next(s, { type: "planned", result: { kind: "plan", entries } });
   s = next(s, { type: "confirm" });
   assert.equal(s.step, "copying");
-  s = next(s, { type: "progress", done: 1, total: 1 });
-  assert.deepEqual(s.progress, { done: 1, total: 1 });
+  const line = { files_done: 1, files_total: 1, bytes_done: 5, bytes_total: 5, text: "1 / 1 file" };
+  s = next(s, { type: "progress", line });
+  assert.deepEqual(s.progress, line);
   const outcome = { copied: 1, failed: [], shoots: ["/photos/2024/03/05/s"] };
   s = next(s, { type: "copied", outcome });
   assert.equal(s.step, "result");
@@ -192,5 +193,11 @@ test("the copy's progress counts only the files to copy, not those already copie
   const mixed = [...entries, { name: "old.jpg", dest: "x/txo_0000.jpg", already: true }];
   s = next(s, { type: "planned", result: { kind: "plan", entries: mixed } });
   s = next(s, { type: "confirm" });
-  assert.deepEqual(s.progress, { done: 0, total: 1 });
+  assert.deepEqual(s.progress, {
+    files_done: 0,
+    files_total: 1,
+    bytes_done: 0,
+    bytes_total: 0,
+    text: "",
+  });
 });

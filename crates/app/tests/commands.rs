@@ -4,8 +4,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use exportpro_app::commands::{self, DateRequest, PlanRequest, PlanResult, PlannedFile};
-use exportpro_core::Lang;
+use exportpro_app::commands::{
+    self, DateRequest, PlanRequest, PlanResult, PlannedFile, ProgressLine,
+};
+use exportpro_core::{Lang, Progress};
 
 struct Dirs {
     _tmp: tempfile::TempDir,
@@ -196,8 +198,8 @@ fn apply_copies_with_progress_and_remembers_the_choices() {
     let mut seen = Vec::new();
 
     let expected = previewed(&req);
-    let outcome = commands::apply(&req, &expected, Lang::En, &d.settings, |done, total| {
-        seen.push((done, total))
+    let outcome = commands::apply(&req, &expected, Lang::En, &d.settings, |line| {
+        seen.push(line)
     })
     .unwrap();
 
@@ -206,7 +208,24 @@ fn apply_copies_with_progress_and_remembers_the_choices() {
     let shoot = d.dest.join("2024/03/05/s");
     assert_eq!(outcome.shoots, std::slice::from_ref(&shoot));
     assert!(shoot.join("photo/originaux/jpg/md_0002.jpg").is_file());
-    assert_eq!(seen, [(1, 2), (2, 2)]);
+    let end = Progress {
+        files_done: 2,
+        files_total: 2,
+        bytes_done: 10,
+        bytes_total: 10,
+    };
+    assert!(
+        seen.windows(2)
+            .all(|w| w[0].progress.bytes_done <= w[1].progress.bytes_done),
+        "{seen:?}"
+    );
+    assert_eq!(
+        seen.last(),
+        Some(&ProgressLine {
+            progress: end,
+            text: "2 / 2 files · 10 B / 10 B".into()
+        })
+    );
     let saved = commands::settings(&d.settings);
     assert_eq!(saved.dest.as_deref(), Some(d.dest.as_path()));
     assert_eq!(saved.prefix.as_deref(), Some("md"));
@@ -219,8 +238,7 @@ fn erase_then_undo_from_the_result_screen() {
     let d = dirs();
     mk(&d.src, "a.jpg", 0, 3600);
     let req = request(&d, DateRequest::Files);
-    let outcome =
-        commands::apply(&req, &previewed(&req), Lang::En, &d.settings, |_, _| {}).unwrap();
+    let outcome = commands::apply(&req, &previewed(&req), Lang::En, &d.settings, |_| {}).unwrap();
 
     let erased = commands::erase(&outcome.shoots);
     assert_eq!((erased.done, erased.kept.len()), (1, 0));
@@ -257,7 +275,7 @@ fn copy_refuses_when_the_card_changed_since_the_preview() {
     let expected = previewed(&req);
     mk(&d.src, "b.jpg", 1, 3600); // written to the card after the preview
 
-    let result = commands::apply(&req, &expected, Lang::En, &d.settings, |_, _| {});
+    let result = commands::apply(&req, &expected, Lang::En, &d.settings, |_| {});
 
     let message = result.unwrap_err();
     assert!(message.contains("changed since the preview"), "{message}");
@@ -338,7 +356,7 @@ fn notes_in_another_language_do_not_count_as_a_changed_preview() {
     let mut expected = previewed(&req);
     expected[0].note = Some("noté dans l'autre langue".into());
 
-    let outcome = commands::apply(&req, &expected, Lang::En, &d.settings, |_, _| {});
+    let outcome = commands::apply(&req, &expected, Lang::En, &d.settings, |_| {});
 
     assert_eq!(outcome.map(|o| o.copied), Ok(1));
 }
@@ -376,11 +394,11 @@ fn the_preview_lists_files_already_copied_and_the_copy_accepts_it() {
     let d = dirs();
     mk(&d.src, "a.jpg", 0, 3600);
     let req = request(&d, DateRequest::Files);
-    commands::apply(&req, &previewed(&req), Lang::En, &d.settings, |_, _| {}).unwrap();
+    commands::apply(&req, &previewed(&req), Lang::En, &d.settings, |_| {}).unwrap();
     mk(&d.src, "b.jpg", 0, 3700);
 
     let preview = previewed(&req);
-    let outcome = commands::apply(&req, &preview, Lang::En, &d.settings, |_, _| {}).unwrap();
+    let outcome = commands::apply(&req, &preview, Lang::En, &d.settings, |_| {}).unwrap();
 
     let already: Vec<_> = preview
         .iter()

@@ -9,6 +9,7 @@ use sha2::{Digest, Sha256};
 use crate::i18n::IoReason;
 use crate::log::{Event, LayoutRecord, LogLine, append};
 use crate::plan::{Entry, Plan, Request};
+use crate::progress::Progress;
 
 /// What happened to each file.
 #[derive(Debug, Default)]
@@ -44,7 +45,7 @@ pub enum CopyFailure {
 /// `exportpro.log`, then create the empty folders for edited files. Originals are never
 /// touched; a failed copy is removed, reported and logged, and the others go on.
 pub fn apply(plan: &Plan, req: &Request) -> Outcome {
-    apply_with_progress(plan, req, |_, _| {})
+    apply_with_progress(plan, req, |_| {})
 }
 
 /// The locks of the shoot folders a copy writes into, released when dropped.
@@ -241,16 +242,49 @@ pub fn finish_copy(
 }
 
 /// `apply_with_progress` with the copy function given: the seam tests use to fill the
-/// disk.
+/// disk. `progress(done, total)` counts files.
 pub fn apply_using(
     plan: &Plan,
     req: &Request,
     mut copy: impl FnMut(&Path, &Path) -> io::Result<(u64, String)>,
     mut progress: impl FnMut(usize, usize),
 ) -> Outcome {
+    apply_measured(
+        plan,
+        req,
+        |from, to, _| copy(from, to),
+        |p| progress(p.files_done, p.files_total),
+    )
+}
+
+/// Copies `from` to `to`, telling `written(bytes so far)` as it goes.
+type Written<'a> = &'a mut dyn FnMut(u64);
+
+/// `apply_using`, reporting files and bytes.
+fn apply_measured(
+    plan: &Plan,
+    req: &Request,
+    mut copy: impl FnMut(&Path, &Path, Written) -> io::Result<(u64, String)>,
+    mut report: impl FnMut(Progress),
+) -> Outcome {
     let layout = LayoutRecord::from(&req.layout);
     let mut outcome = Outcome::default();
-    let total = plan.entries.len();
+    // Sizes as the copy starts: one metadata read per file.
+    let sizes: Vec<u64> = plan
+        .entries
+        .iter()
+        .map(|e| fs::metadata(&e.source).map_or(0, |m| m.len()))
+        .collect();
+    let mut done = Progress {
+        files_total: plan.entries.len(),
+        bytes_total: sizes.iter().sum(),
+        ..Progress::default()
+    };
+    let file_done = |done: &mut Progress, report: &mut dyn FnMut(Progress), i: usize| {
+        done.files_done = i + 1;
+        done.bytes_done += sizes[i];
+        report(*done);
+    };
     // The destination the user chose is made now (if missing), so it can be watched: from
     // here on, a copy never makes it again.
     let _ = fs::create_dir_all(&req.dest);
@@ -266,12 +300,19 @@ pub fn apply_using(
         }
         if let Some(reason) = &stop {
             outcome.failed.push((e.clone(), reason.clone()));
-            progress(i + 1, total);
+            file_done(&mut done, &mut report, i);
             continue;
         }
         let log = req.dest.join(&e.shoot).join(crate::log::LOG_NAME);
         let dest = req.dest.join(&e.dest);
-        let (line, copy_error) = match copy(&e.source, &dest) {
+        let (before, size) = (done, sizes[i]);
+        let mut written = |bytes: u64| {
+            report(Progress {
+                bytes_done: before.bytes_done + bytes.min(size),
+                ..before
+            })
+        };
+        let (line, copy_error) = match copy(&e.source, &dest, &mut written) {
             Ok((size, sha256)) => {
                 strip_extended_attributes(&dest);
                 let line = LogLine::new(Event::Copied, e, &layout).with_hash(size, sha256);
@@ -309,7 +350,7 @@ pub fn apply_using(
         if log.exists() && !outcome.logs.contains(&log) {
             outcome.logs.push(log);
         }
-        progress(i + 1, total);
+        file_done(&mut done, &mut report, i);
     }
     // Edited folders live on the destination: only a full or missing one keeps them away.
     let destination_down = if places.dest_gone() {
@@ -440,13 +481,9 @@ fn is_full(err: &io::Error) -> bool {
     )
 }
 
-/// `apply`, calling `progress(done, total)` after each file.
-pub fn apply_with_progress(
-    plan: &Plan,
-    req: &Request,
-    progress: impl FnMut(usize, usize),
-) -> Outcome {
-    apply_using(plan, req, copy_verified, progress)
+/// `apply`, reporting its progress after each file.
+pub fn apply_with_progress(plan: &Plan, req: &Request, progress: impl FnMut(Progress)) -> Outcome {
+    apply_measured(plan, req, copy_verified_with, progress)
 }
 
 /// Copy `src` to a new file `dst` (never overwriting) with the source's file times, fsync
@@ -454,6 +491,11 @@ pub fn apply_with_progress(
 /// any error the partial copy is removed. The read-back can come from the OS cache: it
 /// checks the copy path, not the medium.
 pub fn copy_verified(src: &Path, dst: &Path) -> io::Result<(u64, String)> {
+    copy_verified_with(src, dst, &mut |_| {})
+}
+
+/// `copy_verified`, telling `written(bytes so far)` after each chunk written.
+pub fn copy_verified_with(src: &Path, dst: &Path, written: Written) -> io::Result<(u64, String)> {
     if let Some(parent) = dst.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -475,7 +517,21 @@ pub fn copy_verified(src: &Path, dst: &Path) -> io::Result<(u64, String)> {
         .create_new(true)
         .open(&part)?;
     let result = (|| {
-        let (size, sha256) = hash_while(&mut input, |chunk| output.write_all(chunk))?;
+        let mut so_far = 0;
+        let mut unsynced = 0;
+        let (size, sha256) = hash_while(&mut input, |chunk| {
+            output.write_all(chunk)?;
+            so_far += chunk.len() as u64;
+            unsynced += chunk.len() as u64;
+            // Flushed as it goes: the progress then follows the medium, not the OS cache,
+            // and the final sync of a large file on a slow card or stick stays short.
+            if unsynced >= SYNC_EVERY {
+                output.sync_data()?;
+                unsynced = 0;
+            }
+            written(so_far);
+            Ok(())
+        })?;
         let meta = input.metadata()?;
         let mut times = fs::FileTimes::new().set_modified(meta.modified()?);
         if let Ok(accessed) = meta.accessed() {
@@ -497,6 +553,9 @@ pub fn copy_verified(src: &Path, dst: &Path) -> io::Result<(u64, String)> {
     }
     result
 }
+
+/// A copy is flushed to its medium every this many bytes.
+const SYNC_EVERY: u64 = 64 * 1024 * 1024;
 
 /// `IMG_1.CR2` → `IMG_1.CR2.part`, next to it.
 fn part_name(dst: &Path) -> PathBuf {

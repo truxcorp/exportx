@@ -2,10 +2,12 @@
 //! main.rs wraps them as Tauri commands. JSON field names match ui/flow.js.
 
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use chrono::NaiveDate;
 use exportpro_core::apply::ShootLocks;
-use exportpro_core::{DateChoice, Lang, Layout, PlanError, Request, Settings};
+use exportpro_core::progress::Meter;
+use exportpro_core::{DateChoice, Lang, Layout, PlanError, Progress, Request, Settings};
 use serde::{Deserialize, Serialize};
 
 /// What the details screen asks for (`planRequest` in ui/flow.js).
@@ -159,14 +161,22 @@ fn changed_since_preview(lang: Lang) -> String {
     .to_owned()
 }
 
-/// Copy the plan, calling `progress(done, total)` after each file, and remember the
+/// What the copy screen shows: the bar's figures and the line under it, worded by the core.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ProgressLine {
+    #[serde(flatten)]
+    pub progress: Progress,
+    pub text: String,
+}
+
+/// Copy the plan, sending `progress` a line up to ten times a second, and remember the
 /// destination, prefix and preset in the settings at `settings`.
 pub fn apply(
     req: &PlanRequest,
     expected: &[PlannedFile],
     lang: Lang,
     settings: &Path,
-    progress: impl FnMut(usize, usize),
+    progress: impl FnMut(ProgressLine),
 ) -> Result<ApplyOutcome, String> {
     let (plan, request, _locks) = match make_plan(req, lang, true) {
         Ok(p) => p,
@@ -181,7 +191,16 @@ pub fn apply(
     if !same {
         return Err(changed_since_preview(lang));
     }
-    let outcome = exportpro_core::apply_with_progress(&plan, &request, progress);
+    let mut progress = progress;
+    let mut meter = Meter::new(Instant::now());
+    let outcome = exportpro_core::apply_with_progress(&plan, &request, |p| {
+        if let Some(report) = meter.update(Instant::now(), p) {
+            progress(ProgressLine {
+                progress: report.progress,
+                text: lang.progress(&report),
+            })
+        }
+    });
     if !outcome.copied.is_empty() {
         let saved = Settings {
             dest: Some(request.dest.clone()),

@@ -199,7 +199,7 @@ fn run(cmd: &str, args: &[String], lang: Lang) -> Result<(), Failure> {
         }
         return Ok(());
     }
-    let outcome = exportpro_core::apply(&plan, &req);
+    let outcome = apply_showing_progress(&plan, &req, lang);
     if !outcome.copied.is_empty() {
         let saved = Settings {
             dest: Some(req.dest.clone()),
@@ -346,4 +346,29 @@ fn make_plan(
         let plan = exportpro_core::plan(&groups, &req).map_err(refused)?;
         Ok((plan, req, None))
     }
+}
+
+/// Copy the plan; on a terminal, keep the app's progress line updated on stderr.
+fn apply_showing_progress(plan: &Plan, req: &Request, lang: Lang) -> exportpro_core::Outcome {
+    use std::io::{IsTerminal, Write};
+    use std::time::Instant;
+
+    let mut err = std::io::stderr();
+    if !err.is_terminal() {
+        return exportpro_core::apply(plan, req);
+    }
+    let mut meter = exportpro_core::progress::Meter::new(Instant::now());
+    let mut shown = false;
+    let outcome = exportpro_core::apply_with_progress(plan, req, |p| {
+        if let Some(report) = meter.update(Instant::now(), p) {
+            // Back to the line's start, then clear what's left of the previous line.
+            let _ = write!(err, "\r{}\x1b[K", lang.progress(&report));
+            let _ = err.flush();
+            shown = true;
+        }
+    });
+    if shown {
+        let _ = writeln!(err);
+    }
+    outcome
 }

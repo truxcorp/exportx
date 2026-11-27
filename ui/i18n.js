@@ -52,7 +52,7 @@ export const STRINGS = {
     en: "The originals are not touched.",
   },
   copy: { fr: "Copier", en: "Copy" },
-  copying: { fr: "Copie : {done} / {total}", en: "Copying: {done} / {total}" },
+  copying: { fr: "Copie en cours…", en: "Copying…" },
 
   result_title: { fr: "Terminé", en: "Done" },
   copied: { fr: "{n} fichier(s) copié(s)", en: "{n} file(s) copied" },

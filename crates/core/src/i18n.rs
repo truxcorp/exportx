@@ -575,6 +575,62 @@ impl Lang {
         }
     }
 
+    /// The copy's progress line: `312 / 1,204 files · 18.2 GB / 64.0 GB · about 6 min
+    /// left`, the time left only once known.
+    pub fn progress(self, r: &crate::progress::Report) -> String {
+        let p = &r.progress;
+        let files = if p.files_total == 1 {
+            self.pick("file", "fichier")
+        } else {
+            self.pick("files", "fichiers")
+        };
+        let mut line = format!(
+            "{} / {} {files} · {} / {}",
+            self.count(p.files_done),
+            self.count(p.files_total),
+            self.size(p.bytes_done),
+            self.size(p.bytes_total),
+        );
+        if let Some(secs) = r.secs_left {
+            line.push_str(" · ");
+            line.push_str(&self.time_left(secs));
+        }
+        line
+    }
+
+    /// `1,204` / `1 204` (non-breaking space).
+    fn count(self, n: usize) -> String {
+        let sep = self.pick(",", "\u{a0}");
+        let digits = n.to_string();
+        let mut out = String::new();
+        for (i, c) in digits.chars().enumerate() {
+            if i > 0 && (digits.len() - i).is_multiple_of(3) {
+                out.push_str(sep);
+            }
+            out.push(c);
+        }
+        out
+    }
+
+    /// `about 6 min left`, minutes rounded up.
+    fn time_left(self, secs: u64) -> String {
+        if secs < 60 {
+            return self
+                .pick("less than a minute left", "moins d'une minute restante")
+                .to_owned();
+        }
+        let minutes = secs.div_ceil(60);
+        let time = if minutes < 60 {
+            format!("{minutes} min")
+        } else {
+            format!("{} h {:02}", minutes / 60, minutes % 60)
+        };
+        match self {
+            Lang::En => format!("about {time} left"),
+            Lang::Fr => format!("environ {time} restantes"),
+        }
+    }
+
     /// A size in decimal units with one decimal, as file managers show it:
     /// `12.4 GB` / `12,4 Go`.
     pub fn size(self, bytes: u64) -> String {
