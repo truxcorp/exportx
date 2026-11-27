@@ -120,7 +120,7 @@ fn is_same_file(file: &File, path: &Path) -> bool {
     }
 }
 
-/// Lock every shoot folder of `plan` (`.exportpro.lock`, made if needed) for the length
+/// Lock every shoot folder of `plan` (`.exportx.lock`, made if needed) for the length
 /// of a copy, so two copies never number files in the same shoot at once. Refused with
 /// the folder already locked by another copy.
 pub fn lock_shoots(plan: &Plan, req: &Request) -> Result<ShootLocks, crate::plan::PlanError> {
@@ -167,7 +167,7 @@ fn add_locks(
         }
         fs::create_dir_all(&folder).map_err(|err| cannot(&err))?;
         locks.created.extend(missing.into_iter().rev());
-        let path = folder.join(".exportpro.lock");
+        let path = folder.join(".exportx.lock");
         // Locking the file we opened proves nothing if another copy deleted and replaced
         // it meanwhile: check the path still names it, else try again with the new one.
         let mut attempts = 0;
