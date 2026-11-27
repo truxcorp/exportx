@@ -255,7 +255,7 @@ fn a_shoot_log_that_cannot_be_read_refuses_the_plan() {
     let d = Dirs::new();
     mk(&d.src, "2024-03-05 09:00", &["a.jpg"]);
     assert_ok(&apply(&d, &["--shoot", "s"]));
-    let log = d.dest.join("2024/03/05/s/exportpro.log");
+    let log = d.dest.join("2024/03/05/s/exportx.log");
     fs::set_permissions(&log, fs::Permissions::from_mode(0o000)).unwrap();
 
     let out = exportpro_with(
@@ -265,7 +265,7 @@ fn a_shoot_log_that_cannot_be_read_refuses_the_plan() {
 
     fs::set_permissions(&log, fs::Permissions::from_mode(0o644)).unwrap();
     assert_eq!(out.status.code(), Some(1), "stdout: {}", stdout(&out));
-    assert!(stderr(&out).contains("exportpro.log"), "{}", stderr(&out));
+    assert!(stderr(&out).contains("exportx.log"), "{}", stderr(&out));
 }
 
 #[test]

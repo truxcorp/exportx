@@ -87,7 +87,7 @@ fn moving_renames_each_file_into_the_tree_and_logs_it() {
     );
     // The source folder stays, empty.
     assert!(names(&src).is_empty());
-    let (lines, problems) = read(&shoot.join("exportpro.log")).unwrap();
+    let (lines, problems) = read(&shoot.join("exportx.log")).unwrap();
     assert!(problems.is_empty());
     assert_eq!(lines.len(), 2);
     assert!(
@@ -186,7 +186,7 @@ fn a_move_never_replaces_a_file_that_appeared_at_its_destination() {
     assert_eq!(fs::read_to_string(&taken).unwrap(), "someone else's");
     assert_eq!(fs::read_to_string(src.join("a.jpg")).unwrap(), "photo a");
     // Logged as failed after the `moved` line: undo leaves it alone.
-    let (lines, _) = read(&req.dest.join("s/exportpro.log")).unwrap();
+    let (lines, _) = read(&req.dest.join("s/exportx.log")).unwrap();
     let events: Vec<Event> = lines.iter().map(|l| l.event).collect();
     assert_eq!(events, [Event::Moved, Event::Failed, Event::Moved]);
 }
@@ -209,7 +209,7 @@ fn undo_moves_the_files_back_to_their_names() {
     for e in &plan.entries {
         assert!(!req.dest.join(&e.dest).exists());
     }
-    let (lines, _) = read(&shoot.join("exportpro.log")).unwrap();
+    let (lines, _) = read(&shoot.join("exportx.log")).unwrap();
     assert_eq!(lines.last().unwrap().event, Event::MovedBack);
     assert_eq!((again.done.len(), again.kept.len()), (0, 0), "{again:?}");
 }

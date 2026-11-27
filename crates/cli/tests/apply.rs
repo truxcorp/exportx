@@ -17,7 +17,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 fn log_lines(shoot: &Path) -> Vec<Value> {
-    fs::read_to_string(shoot.join("exportpro.log"))
+    fs::read_to_string(shoot.join("exportx.log"))
         .unwrap()
         .lines()
         .map(|l| serde_json::from_str(l).unwrap_or_else(|e| panic!("{e}: {l}")))
