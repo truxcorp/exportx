@@ -6,25 +6,65 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::apply::{copy_verified, hash_file};
-use crate::log::{self, Event, LOG_NAME, LogLine};
+use crate::log::{self, Event, LOG_NAME, LineProblem, LogLine};
 
 /// What happened to each original.
 #[derive(Debug, Default)]
 pub struct Outcome {
     /// Originals erased (or restored), absolute.
     pub done: Vec<PathBuf>,
-    /// Originals left as they are, and why.
-    pub kept: Vec<(PathBuf, String)>,
+    /// Originals left as they are (or log files with lines skipped), and why.
+    pub kept: Vec<(PathBuf, Keep)>,
+}
+
+/// Which of the two files a check was about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Which {
+    Copy,
+    Original,
+}
+
+/// Why an original was left alone; `i18n::Lang::keep_reason` words it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Keep {
+    Unreadable {
+        which: Which,
+        path: PathBuf,
+        error: String,
+    },
+    /// No longer the size and SHA-256 the log recorded.
+    Mismatch {
+        which: Which,
+        path: PathBuf,
+    },
+    CannotWriteLog {
+        log: PathBuf,
+        error: String,
+    },
+    /// Undo restored it but couldn't log that.
+    RestoredNotLogged {
+        log: PathBuf,
+        error: String,
+    },
+    /// The system Trash refused it.
+    Trash(String),
+    /// Copying it back failed.
+    CopyBack(String),
+    /// A log line that couldn't be used, skipped.
+    LogLine {
+        line: usize,
+        problem: LineProblem,
+    },
 }
 
 impl Outcome {
     /// Start with one `kept` entry per log line that couldn't be used.
-    fn with_problems(log_path: &Path, problems: Vec<String>) -> Self {
+    fn with_problems(log_path: &Path, problems: Vec<(usize, LineProblem)>) -> Self {
         Outcome {
             done: Vec::new(),
             kept: problems
                 .into_iter()
-                .map(|p| (log_path.to_path_buf(), p))
+                .map(|(line, problem)| (log_path.to_path_buf(), Keep::LogLine { line, problem }))
                 .collect(),
         }
     }
@@ -42,8 +82,8 @@ pub fn erase(shoot: &Path) -> io::Result<Outcome> {
         if !erasable || !line.source.exists() {
             continue;
         }
-        if let Err(why) = check(&shoot.join(&line.dest), &line, "copy")
-            .and_then(|()| check(&line.source, &line, "original"))
+        if let Err(why) = check(&shoot.join(&line.dest), &line, Which::Copy)
+            .and_then(|()| check(&line.source, &line, Which::Original))
         {
             outcome.kept.push((line.source.clone(), why));
             continue;
@@ -52,13 +92,18 @@ pub fn erase(shoot: &Path) -> io::Result<Outcome> {
         if line.event != Event::Erased
             && let Err(e) = log::append(&log_path, &line.follow_up(Event::Erased))
         {
-            let why = format!("cannot write {}: {e}", log_path.display());
+            let why = Keep::CannotWriteLog {
+                log: log_path.clone(),
+                error: e.to_string(),
+            };
             outcome.kept.push((line.source.clone(), why));
             continue;
         }
         match trash::delete(&line.source) {
             Ok(()) => outcome.done.push(line.source.clone()),
-            Err(e) => outcome.kept.push((line.source.clone(), e.to_string())),
+            Err(e) => outcome
+                .kept
+                .push((line.source.clone(), Keep::Trash(e.to_string()))),
         }
     }
     Ok(outcome)
@@ -75,15 +120,18 @@ pub fn undo(shoot: &Path) -> io::Result<Outcome> {
             continue;
         }
         let copy = shoot.join(&line.dest);
-        let restored = check(&copy, &line, "copy").and_then(|()| {
+        let restored = check(&copy, &line, Which::Copy).and_then(|()| {
             copy_verified(&copy, &line.source)
                 .map(|_| ())
-                .map_err(|e| e.to_string())
+                .map_err(|e| Keep::CopyBack(e.to_string()))
         });
         match restored {
             Ok(()) => {
                 if let Err(e) = log::append(&log_path, &line.follow_up(Event::Restored)) {
-                    let why = format!("restored, but cannot write {}: {e}", log_path.display());
+                    let why = Keep::RestoredNotLogged {
+                        log: log_path.clone(),
+                        error: e.to_string(),
+                    };
                     outcome.kept.push((line.source.clone(), why));
                 }
                 outcome.done.push(line.source.clone());
@@ -107,15 +155,18 @@ fn last_events(lines: &[LogLine]) -> Vec<LogLine> {
 }
 
 /// `path` still has the size and SHA-256 the log recorded.
-fn check(path: &Path, line: &LogLine, what: &str) -> Result<(), String> {
-    let (size, sha256) =
-        hash_file(path).map_err(|e| format!("the {what} {} can't be read: {e}", path.display()))?;
+fn check(path: &Path, line: &LogLine, which: Which) -> Result<(), Keep> {
+    let (size, sha256) = hash_file(path).map_err(|e| Keep::Unreadable {
+        which,
+        path: path.to_path_buf(),
+        error: e.to_string(),
+    })?;
     if Some(size) == line.size && line.sha256.as_deref() == Some(sha256.as_str()) {
         Ok(())
     } else {
-        Err(format!(
-            "the {what} {} no longer matches the log",
-            path.display()
-        ))
+        Err(Keep::Mismatch {
+            which,
+            path: path.to_path_buf(),
+        })
     }
 }

@@ -69,15 +69,15 @@ async fn apply(
 }
 
 #[tauri::command]
-async fn erase(shoots: Vec<PathBuf>) -> Result<LogOutcome, String> {
-    tauri::async_runtime::spawn_blocking(move || commands::erase(&shoots))
+async fn erase(shoots: Vec<PathBuf>, lang: String) -> Result<LogOutcome, String> {
+    tauri::async_runtime::spawn_blocking(move || commands::erase_in(&shoots, Lang::parse(&lang)))
         .await
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-async fn undo(shoots: Vec<PathBuf>) -> Result<LogOutcome, String> {
-    tauri::async_runtime::spawn_blocking(move || commands::undo(&shoots))
+async fn undo(shoots: Vec<PathBuf>, lang: String) -> Result<LogOutcome, String> {
+    tauri::async_runtime::spawn_blocking(move || commands::undo_in(&shoots, Lang::parse(&lang)))
         .await
         .map_err(|e| e.to_string())
 }

@@ -23,16 +23,50 @@ const USAGE: &str = "usage: exportpro plan|apply --source <dir> --dest <dir> --s
 [--shoot-path <template>] [--file-path <template>] [--lang fr|en]\n       \
 exportpro erase|undo <shoot folder>... [--lang fr|en]";
 
-fn main() -> ExitCode {
-    let mut args: Vec<String> = std::env::args().skip(1).collect();
-    // `--lang fr|en` anywhere switches the language; else the environment's.
-    let lang = match args.iter().position(|a| a == "--lang") {
-        Some(i) if i + 1 < args.len() => {
+/// Options that take a value: what follows them is never read as an option.
+const VALUE_OPTIONS: &[&str] = &[
+    "--source",
+    "--dest",
+    "--shoot",
+    "--prefix",
+    "--date",
+    "--preset",
+    "--shoot-path",
+    "--file-path",
+];
+
+/// Take every `--lang fr|en` out of `args` where an option name can stand (for plan and
+/// apply, not as another option's value); the last one wins. The environment's language
+/// when there is none.
+fn take_lang(args: &mut Vec<String>) -> Result<Lang, String> {
+    let plan_like = matches!(args.first().map(String::as_str), Some("plan" | "apply"));
+    let mut lang = None;
+    let mut i = 0;
+    while i < args.len() {
+        if plan_like && VALUE_OPTIONS.contains(&args[i].as_str()) {
+            i += 2;
+        } else if args[i] == "--lang" {
+            if i + 1 >= args.len() {
+                return Err(lang.unwrap_or_else(Lang::from_env).needs_value("--lang"));
+            }
             let tag = args.remove(i + 1);
             args.remove(i);
-            Lang::parse(&tag)
+            lang = Some(Lang::parse(&tag));
+        } else {
+            i += 1;
         }
-        _ => Lang::from_env(),
+    }
+    Ok(lang.unwrap_or_else(Lang::from_env))
+}
+
+fn main() -> ExitCode {
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    let lang = match take_lang(&mut args) {
+        Ok(lang) => lang,
+        Err(msg) => {
+            eprintln!("exportpro: {msg}");
+            return ExitCode::FAILURE;
+        }
     };
     match args.first().map(String::as_str) {
         Some(cmd @ ("plan" | "apply")) => match run(cmd, &args[1..], lang) {
@@ -56,7 +90,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Some(other) => {
-            eprintln!("exportpro: unknown command {other:?}\n{USAGE}");
+            eprintln!("exportpro: {}\n{USAGE}", lang.unknown_command(other));
             ExitCode::FAILURE
         }
     }
@@ -93,15 +127,11 @@ impl From<&str> for Failure {
     }
 }
 
-fn parse_plan(args: &[String]) -> Result<PlanArgs, String> {
+fn parse_plan(args: &[String], lang: Lang) -> Result<PlanArgs, String> {
     let mut a = PlanArgs::default();
     let mut it = args.iter();
     while let Some(flag) = it.next() {
-        let mut value = || {
-            it.next()
-                .cloned()
-                .ok_or_else(|| format!("{flag} needs a value"))
-        };
+        let mut value = || it.next().cloned().ok_or_else(|| lang.needs_value(flag));
         match flag.as_str() {
             "--source" => a.source = Some(value()?.into()),
             "--dest" => a.dest = Some(value()?.into()),
@@ -110,7 +140,7 @@ fn parse_plan(args: &[String]) -> Result<PlanArgs, String> {
             "--date" => {
                 let v = value()?;
                 let d = NaiveDate::parse_from_str(&v, "%Y-%m-%d")
-                    .map_err(|_| format!("--date: {v} is not a date (YYYY-MM-DD)"))?;
+                    .map_err(|_| lang.not_a_date("--date", &v))?;
                 a.date = Some(d);
             }
             "--split" => a.split = true,
@@ -118,7 +148,7 @@ fn parse_plan(args: &[String]) -> Result<PlanArgs, String> {
             "--preset" => a.preset = Some(value()?),
             "--shoot-path" => a.shoot_path = Some(value()?),
             "--file-path" => a.file_path = Some(value()?),
-            other => return Err(format!("unknown option {other}")),
+            other => return Err(lang.unknown_option(other)),
         }
     }
     Ok(a)
@@ -196,7 +226,7 @@ fn run(cmd: &str, args: &[String], lang: Lang) -> Result<(), Failure> {
 /// `exportpro erase|undo <shoot folder>...`
 fn run_log_command(cmd: &str, folders: &[String], lang: Lang) -> ExitCode {
     if folders.is_empty() {
-        eprintln!("exportpro: {cmd} needs the shoot folder(s) holding exportpro.log\n{USAGE}");
+        eprintln!("exportpro: {}\n{USAGE}", lang.needs_shoot_folders(cmd));
         return ExitCode::FAILURE;
     }
     let mut ok = true;
@@ -218,7 +248,7 @@ fn run_log_command(cmd: &str, folders: &[String], lang: Lang) -> ExitCode {
                     println!("{}", lang.done_line(verb, path));
                 }
                 for (path, why) in &outcome.kept {
-                    eprintln!("exportpro: {}", lang.kept(path, why));
+                    eprintln!("exportpro: {}", lang.kept(path, &lang.keep_reason(why)));
                 }
                 println!(
                     "{}",
@@ -241,7 +271,7 @@ fn run_log_command(cmd: &str, folders: &[String], lang: Lang) -> ExitCode {
 
 /// The preset of a run, when it used no custom template.
 fn preset_used(args: &[String]) -> Option<String> {
-    let a = parse_plan(args).ok()?;
+    let a = parse_plan(args, Lang::En).ok()?;
     let saved = Settings::load();
     if a.shoot_path.is_some() || a.file_path.is_some() {
         return None;
@@ -254,7 +284,7 @@ fn preset_used(args: &[String]) -> Option<String> {
 }
 
 fn make_plan(args: &[String], lang: Lang) -> Result<(Plan, Request), Failure> {
-    let mut a = parse_plan(args)?;
+    let mut a = parse_plan(args, lang)?;
     // Options left out come from the last copy.
     let saved = Settings::load();
     a.dest = a.dest.or(saved.dest);
@@ -264,21 +294,21 @@ fn make_plan(args: &[String], lang: Lang) -> Result<(Plan, Request), Failure> {
     if a.shoot_path.is_none() && a.file_path.is_none() {
         a.preset = a.preset.or(saved.preset);
     }
-    let source = a.source.ok_or("--source is required")?;
-    let dest = a.dest.ok_or("--dest is required")?;
+    let source = a.source.ok_or_else(|| lang.required("--source"))?;
+    let dest = a.dest.ok_or_else(|| lang.required("--dest"))?;
     // Absolute, so the remembered destination means the same folder from anywhere.
     let dest =
         std::path::absolute(&dest).map_err(|e| Failure::Error(lang.cannot_read(&dest, &e)))?;
     let req = Request {
         dest,
-        shoot: a.shoot.ok_or("--shoot is required")?,
+        shoot: a.shoot.ok_or_else(|| lang.required("--shoot"))?,
         prefix: a.prefix.unwrap_or_else(|| DEFAULT_PREFIX.to_owned()),
         date: match (a.date, a.split, a.no_date) {
             (Some(d), false, false) => DateChoice::Given(d),
             (None, true, false) => DateChoice::EachDay,
             (None, false, true) => DateChoice::NoDate,
             (None, false, false) => DateChoice::Files,
-            _ => return Err("--date, --split and --no-date exclude each other".into()),
+            _ => return Err(lang.dates_exclusive().into()),
         },
         layout: layout(&a.preset, &a.shoot_path, &a.file_path, lang)?,
     };

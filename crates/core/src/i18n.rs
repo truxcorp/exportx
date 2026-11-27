@@ -4,7 +4,9 @@ use std::path::Path;
 
 use chrono::NaiveDate;
 
+use crate::erase::{Keep, Which};
 use crate::layout::{LayoutError, MAX_WIDTH, TemplateError, Token};
+use crate::log::LineProblem;
 use crate::names::NameProblem;
 use crate::plan::PlanError;
 
@@ -257,6 +259,142 @@ impl Lang {
         match self {
             Lang::En => format!("{verb}: {}", path.display()),
             Lang::Fr => format!("{verb} : {}", path.display()),
+        }
+    }
+
+    /// Why erase or undo left a file alone.
+    pub fn keep_reason(self, k: &Keep) -> String {
+        let which = |w: &Which| match (w, self) {
+            (Which::Copy, Lang::En) => "copy",
+            (Which::Original, Lang::En) => "original",
+            (Which::Copy, Lang::Fr) => "copie",
+            (Which::Original, Lang::Fr) => "original",
+        };
+        let article = |w: &Which| match w {
+            Which::Copy => "la",
+            Which::Original => "l'",
+        };
+        match (k, self) {
+            (
+                Keep::Unreadable {
+                    which: w,
+                    path,
+                    error,
+                },
+                Lang::En,
+            ) => {
+                format!("the {} {} can't be read: {error}", which(w), path.display())
+            }
+            (
+                Keep::Unreadable {
+                    which: w,
+                    path,
+                    error,
+                },
+                Lang::Fr,
+            ) => format!(
+                "{}{}{} {} est illisible : {error}",
+                article(w),
+                if *w == Which::Copy { " " } else { "" },
+                which(w),
+                path.display()
+            ),
+            (Keep::Mismatch { which: w, path }, Lang::En) => {
+                format!(
+                    "the {} {} no longer matches the log",
+                    which(w),
+                    path.display()
+                )
+            }
+            (Keep::Mismatch { which: w, path }, Lang::Fr) => format!(
+                "{}{}{} {} ne correspond plus au journal",
+                article(w),
+                if *w == Which::Copy { " " } else { "" },
+                which(w),
+                path.display()
+            ),
+            (Keep::CannotWriteLog { log, error }, Lang::En) => {
+                format!("cannot write {}: {error}", log.display())
+            }
+            (Keep::CannotWriteLog { log, error }, Lang::Fr) => {
+                format!("impossible d'écrire {} : {error}", log.display())
+            }
+            (Keep::RestoredNotLogged { log, error }, Lang::En) => {
+                format!("restored, but cannot write {}: {error}", log.display())
+            }
+            (Keep::RestoredNotLogged { log, error }, Lang::Fr) => {
+                format!(
+                    "restauré, mais impossible d'écrire {} : {error}",
+                    log.display()
+                )
+            }
+            (Keep::Trash(e), Lang::En) => format!("the Trash refused it: {e}"),
+            (Keep::Trash(e), Lang::Fr) => format!("la corbeille l'a refusé : {e}"),
+            (Keep::CopyBack(e), Lang::En) => format!("copying it back failed: {e}"),
+            (Keep::CopyBack(e), Lang::Fr) => format!("la recopie a échoué : {e}"),
+            (Keep::LogLine { line, problem }, Lang::En) => match problem {
+                LineProblem::Unreadable(e) => format!("line {line}: unreadable ({e}): skipped"),
+                LineProblem::Newer(v) => format!(
+                    "line {line}: format version {v} is newer than this ExportPro's: skipped"
+                ),
+            },
+            (Keep::LogLine { line, problem }, Lang::Fr) => match problem {
+                LineProblem::Unreadable(e) => format!("ligne {line} : illisible ({e}) : ignorée"),
+                LineProblem::Newer(v) => format!(
+                    "ligne {line} : la version de format {v} est plus récente que cet ExportPro : ignorée"
+                ),
+            },
+        }
+    }
+
+    pub fn needs_value(self, flag: &str) -> String {
+        match self {
+            Lang::En => format!("{flag} needs a value"),
+            Lang::Fr => format!("{flag} demande une valeur"),
+        }
+    }
+
+    pub fn not_a_date(self, flag: &str, value: &str) -> String {
+        match self {
+            Lang::En => format!("{flag}: {value} is not a date (YYYY-MM-DD)"),
+            Lang::Fr => format!("{flag} : {value} n'est pas une date (AAAA-MM-JJ)"),
+        }
+    }
+
+    pub fn unknown_option(self, option: &str) -> String {
+        match self {
+            Lang::En => format!("unknown option {option}"),
+            Lang::Fr => format!("option inconnue {option}"),
+        }
+    }
+
+    pub fn required(self, flag: &str) -> String {
+        match self {
+            Lang::En => format!("{flag} is required"),
+            Lang::Fr => format!("{flag} est obligatoire"),
+        }
+    }
+
+    pub fn dates_exclusive(self) -> &'static str {
+        self.pick(
+            "--date, --split and --no-date exclude each other",
+            "--date, --split et --no-date s'excluent",
+        )
+    }
+
+    pub fn unknown_command(self, command: &str) -> String {
+        match self {
+            Lang::En => format!("unknown command {command:?}"),
+            Lang::Fr => format!("commande inconnue {command:?}"),
+        }
+    }
+
+    pub fn needs_shoot_folders(self, command: &str) -> String {
+        match self {
+            Lang::En => format!("{command} needs the shoot folder(s) holding exportpro.log"),
+            Lang::Fr => format!(
+                "{command} demande le ou les dossiers de séance qui contiennent exportpro.log"
+            ),
         }
     }
 }

@@ -104,9 +104,21 @@ impl LogLine {
     }
 }
 
-/// The lines of the log at `path` that this version can use, in order, and a message
-/// for each line it can't (torn by a crash, or written by a newer ExportPro).
-pub fn read(path: &Path) -> io::Result<(Vec<LogLine>, Vec<String>)> {
+/// Why a log line can't be used.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LineProblem {
+    /// Not a line this version can parse (e.g. torn by a crash): the parser's message.
+    Unreadable(String),
+    /// Written by a newer ExportPro, in this format version.
+    Newer(u64),
+}
+
+/// A log line's number (from 1) and why it can't be used.
+pub type LineIssue = (usize, LineProblem);
+
+/// The lines of the log at `path` that this version can use, in order, and the number
+/// (from 1) and problem of each line it can't.
+pub fn read(path: &Path) -> io::Result<(Vec<LogLine>, Vec<LineIssue>)> {
     let mut lines = Vec::new();
     let mut problems = Vec::new();
     for (i, text) in fs::read_to_string(path)?.lines().enumerate() {
@@ -116,17 +128,14 @@ pub fn read(path: &Path) -> io::Result<(Vec<LogLine>, Vec<String>)> {
         let parsed = serde_json::from_str::<serde_json::Value>(text).and_then(|value| {
             let v = value.get("v").and_then(serde_json::Value::as_u64);
             if v.is_some_and(|v| v > u64::from(FORMAT_VERSION)) {
-                return Ok(Err(format!(
-                    "format version {} is newer than this ExportPro's",
-                    v.unwrap_or_default()
-                )));
+                return Ok(Err(LineProblem::Newer(v.unwrap_or_default())));
             }
             serde_json::from_value::<LogLine>(value).map(Ok)
         });
         match parsed {
             Ok(Ok(line)) => lines.push(line),
-            Ok(Err(why)) => problems.push(format!("line {}: {why}: skipped", i + 1)),
-            Err(e) => problems.push(format!("line {}: unreadable ({e}): skipped", i + 1)),
+            Ok(Err(problem)) => problems.push((i + 1, problem)),
+            Err(e) => problems.push((i + 1, LineProblem::Unreadable(e.to_string()))),
         }
     }
     Ok((lines, problems))

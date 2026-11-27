@@ -42,9 +42,9 @@ async function send(event) {
       });
       send({ type: "copied", outcome });
     } else if (state.step === "erasing") {
-      send({ type: "erased", outcome: await invoke("erase", { shoots: state.outcome.shoots }) });
+      send({ type: "erased", outcome: await invoke("erase", { shoots: state.outcome.shoots, lang }) });
     } else if (state.step === "undoing") {
-      send({ type: "undone", outcome: await invoke("undo", { shoots: state.outcome.shoots }) });
+      send({ type: "undone", outcome: await invoke("undo", { shoots: state.outcome.shoots, lang }) });
     }
   } catch (err) {
     const message = String(err);

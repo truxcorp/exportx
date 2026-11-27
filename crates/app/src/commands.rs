@@ -166,16 +166,27 @@ pub fn apply(
 
 /// Move the verified originals of these shoot folders to the Trash.
 pub fn erase(shoots: &[PathBuf]) -> LogOutcome {
-    each_shoot(shoots, exportpro_core::erase::erase)
+    erase_in(shoots, Lang::En)
+}
+
+/// `erase`, with the reasons for kept files in `lang`.
+pub fn erase_in(shoots: &[PathBuf], lang: Lang) -> LogOutcome {
+    each_shoot(shoots, lang, exportpro_core::erase::erase)
 }
 
 /// Restore the erased originals of these shoot folders from their copies.
 pub fn undo(shoots: &[PathBuf]) -> LogOutcome {
-    each_shoot(shoots, exportpro_core::erase::undo)
+    undo_in(shoots, Lang::En)
+}
+
+/// `undo`, with the reasons for kept files in `lang`.
+pub fn undo_in(shoots: &[PathBuf], lang: Lang) -> LogOutcome {
+    each_shoot(shoots, lang, exportpro_core::erase::undo)
 }
 
 fn each_shoot(
     shoots: &[PathBuf],
+    lang: Lang,
     run: impl Fn(&Path) -> std::io::Result<exportpro_core::erase::Outcome>,
 ) -> LogOutcome {
     let mut total = LogOutcome {
@@ -189,7 +200,7 @@ fn each_shoot(
                 total.kept.extend(
                     o.kept
                         .into_iter()
-                        .map(|(p, why)| (p.display().to_string(), why)),
+                        .map(|(p, why)| (p.display().to_string(), lang.keep_reason(&why))),
                 );
             }
             Err(e) => total
