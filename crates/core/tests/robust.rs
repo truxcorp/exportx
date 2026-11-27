@@ -102,7 +102,7 @@ fn a_lock_file_replaced_while_locking_is_not_trusted() {
     let groups = card(dir.path(), &["a.jpg"]);
     let req = request(dir.path());
     let plan = exportpro_core::plan(&groups, &req).unwrap();
-    let lock_path = dir.path().join("photos/s/.exportpro.lock");
+    let lock_path = dir.path().join("photos/s/.exportx.lock");
     let theirs = std::cell::RefCell::new(None);
     let calls = std::cell::Cell::new(0);
 
@@ -167,7 +167,7 @@ fn a_copy_refused_after_locking_leaves_no_empty_shoot_folder() {
     // The second day's shoot is being copied by someone else.
     let busy = dir.path().join("photos/2024/03/07/s");
     fs::create_dir_all(&busy).unwrap();
-    let lock = fs::File::create(busy.join(".exportpro.lock")).unwrap();
+    let lock = fs::File::create(busy.join(".exportx.lock")).unwrap();
     lock.try_lock().unwrap();
 
     let result = exportpro_core::apply::plan_locked(&groups, &req);

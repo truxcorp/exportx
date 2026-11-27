@@ -31,7 +31,7 @@ fn a_second_copy_into_a_shoot_being_copied_is_refused() {
     let shoot = d.dest.join("2024/03/05/s");
     fs::create_dir_all(&shoot).unwrap();
     // Another copy holds the shoot's lock.
-    let lock = fs::File::create(shoot.join(".exportpro.lock")).unwrap();
+    let lock = fs::File::create(shoot.join(".exportx.lock")).unwrap();
     lock.try_lock().unwrap();
 
     let out = exportpro_with(
@@ -290,7 +290,7 @@ fn no_lock_file_is_left_after_a_copy() {
 
     assert_ok(&apply(&d, &["--shoot", "s"]));
 
-    assert!(!d.dest.join("2024/03/05/s/.exportpro.lock").exists());
+    assert!(!d.dest.join("2024/03/05/s/.exportx.lock").exists());
 }
 
 #[test]
