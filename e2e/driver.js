@@ -13,8 +13,15 @@ let nextPort = 4444;
 let nextDisplay = 90;
 
 /** Start the app for one test. `lang`: the system language ("fr_FR.UTF-8"…); `theme`:
- * "dark" for a dark desktop theme (GTK, which the web view's prefers-color-scheme follows). */
-export async function launch({ lang = "fr_FR.UTF-8", settings = null, configDir = null, theme = "light" } = {}) {
+ * "dark" for a dark desktop theme (GTK, which the web view's prefers-color-scheme follows);
+ * `env`: more environment for the app (EXPORTX_UPDATE_URL…). */
+export async function launch({
+  lang = "fr_FR.UTF-8",
+  settings = null,
+  configDir = null,
+  theme = "light",
+  env: extra = {},
+} = {}) {
   const home = mkdtempSync(join(tmpdir(), "exportx-e2e-"));
   const config = configDir ?? join(home, ".config");
   if (settings) {
@@ -35,6 +42,9 @@ export async function launch({ lang = "fr_FR.UTF-8", settings = null, configDir 
     WEBKIT_DISABLE_DMABUF_RENDERER: "1",
     LIBGL_ALWAYS_SOFTWARE: "1",
     GTK_THEME: theme === "dark" ? "Adwaita:dark" : "Adwaita",
+    // The startup update check never reaches GitHub from a test (port 9: nothing listens).
+    EXPORTX_UPDATE_URL: "http://127.0.0.1:9/latest.json",
+    ...extra,
   };
   const xvfb = spawn("Xvfb", [display, "-screen", "0", "1024x768x24", "-nolisten", "tcp"], {
     stdio: "ignore",
