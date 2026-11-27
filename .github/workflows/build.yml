@@ -1,11 +1,17 @@
 name: build
 # Unsigned Linux packages of the desktop app (AppImage, .deb) on every merge to main and
-# on demand, kept as workflow artifacts. macOS and Windows builds come after the MVP
+# on demand, kept as workflow artifacts. An unsigned Apple Silicon .dmg only when asked
+# (run by hand with macos=true; GitHub-hosted macOS minutes count 10x). Windows comes after the MVP
 # (docs/plan/tauri-prototype.md). Thin: make builds them in the Containerfile image.
 on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      macos:
+        description: Also build the Apple Silicon .dmg (GitHub-hosted, ~30 included minutes)
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -26,4 +32,18 @@ jobs:
           path: |
             target/box/release/bundle/appimage/*.AppImage
             target/box/release/bundle/deb/*.deb
+          if-no-files-found: error
+  macos:
+    if: github.event_name == 'workflow_dispatch' && inputs.macos
+    runs-on: macos-15               # Apple Silicon (arm64), GitHub-hosted
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: make bundle-macos
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: exportpro-macos-arm64
+          path: target/release/bundle/dmg/*.dmg
           if-no-files-found: error

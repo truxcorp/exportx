@@ -15,7 +15,7 @@ AS_ME = --user "$$(id -u):$$(id -g)" $(if $(filter true,$(ROOTLESS)),--userns=ke
 TARGET_DIR ?= $(CURDIR)/target
 T ?= lint typecheck test-unit test-e2e security
 
-.PHONY: lint typecheck test-unit test-integration test-e2e security hooks image box run ci bundle
+.PHONY: lint typecheck test-unit test-integration test-e2e security hooks image box run ci bundle bundle-macos
 
 ## lint: rustfmt check and clippy (warnings fail)
 lint:
@@ -50,6 +50,11 @@ security:
 bundle:
 	npm ci --no-audit --no-fund
 	APPIMAGE_EXTRACT_AND_RUN=1 NO_STRIP=true npx tauri build --bundles appimage,deb
+
+## bundle-macos: the unsigned Mac app (.app, .dmg) for this Mac's architecture, in target/release/bundle (run on macOS)
+bundle-macos:
+	npm ci --no-audit --no-fund
+	npx tauri build --ci --bundles app,dmg
 
 ## hooks: once per clone: gitleaks on each commit, lint/typecheck/unit before each push
 hooks:
