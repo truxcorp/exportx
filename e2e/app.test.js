@@ -239,7 +239,6 @@ test("the information panel lists the formats; the options remember the update c
     await app.click("[data-action=info]");
     await app.waitText("Tout autre fichier est copié comme une photo");
     const info = await app.text();
-    assert.match(info, /^ExportX/, "the app's name heads the window");
     assert.match(info, /ExportX \d+\.\d+\.\d+/);
     assert.match(info, /exportx\.log/);
     assert.ok(!info.includes("ExportPro"), "no old name left");
@@ -262,5 +261,21 @@ test("the information panel lists the formats; the options remember the update c
     assert.match(saved(), /check_updates = false/);
   } finally {
     await app.close();
+  }
+});
+
+test("the header shows the ExportX logo drawn for the theme, light or dark", async () => {
+  for (const theme of ["light", "dark"]) {
+    const app = await launch({ lang: "fr_FR.UTF-8", theme });
+    try {
+      await app.waitText("1. Les photos à ranger");
+      const other = theme === "light" ? "dark" : "light";
+      assert.equal(await app.attribute(`header h1 img.logo-${theme}`, "alt"), "ExportX");
+      assert.equal(await app.displayed(`header h1 img.logo-${theme}`), true, `${theme} logo shown`);
+      assert.equal(await app.displayed(`header h1 img.logo-${other}`), false, `${other} logo hidden`);
+      await app.screenshot(`0-header-${theme}`);
+    } finally {
+      await app.close();
+    }
   }
 });
