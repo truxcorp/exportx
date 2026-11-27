@@ -430,3 +430,31 @@ pub fn check_folder(path: &str, source: Option<&Path>, lang: Lang) -> Result<Pat
     }
     Ok(folder)
 }
+
+/// How the app was installed, as far as updating goes: the updater replaces an AppImage or
+/// a Mac app; a `.deb` (or a build from source) is updated another way (ADR 0007).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Bundle {
+    AppImage,
+    MacApp,
+    Other,
+}
+
+/// What the update banner offers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum UpdateOffer {
+    /// "Version X: update and restart".
+    Install { version: String },
+    /// A link to the release page, for installs the updater can't replace.
+    Link { version: String, page: String },
+}
+
+/// Whether a newer release than `current` is described at `url`, and what to offer for it.
+pub fn check_update(
+    _url: &str,
+    _current: &str,
+    _bundle: Bundle,
+) -> Result<Option<UpdateOffer>, String> {
+    Ok(None)
+}
