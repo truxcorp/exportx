@@ -34,6 +34,11 @@ export function start(settings = {}) {
     // "options" or "info" when that panel is open, over whatever step.
     panel: null,
     checkUpdates: settings.check_updates !== false,
+    // ADR 0007: the newer release found ({ kind: "install" | "link", version, page }),
+    // what the last manual check or install said, and an install under way.
+    update: null,
+    updateMessage: "",
+    updating: false,
   };
 }
 
@@ -128,11 +133,24 @@ export function next(s, e) {
       return { ...s, panel: s.panel === e.name ? null : e.name };
     case "checkUpdates":
       return { ...s, checkUpdates: e.on };
+    case "updateChecked":
+      if (e.offer) return { ...s, update: e.offer, updateMessage: "" };
+      return e.manual ? { ...s, update: null, updateMessage: "up_to_date" } : s;
+    case "updateFailed":
+      // A startup check that fails shows nothing (no network is no news).
+      return e.manual ? { ...s, updateMessage: e.message } : s;
+    case "install":
+      return canUpdate(s) ? { ...s, updating: true, updateMessage: "" } : s;
+    case "installFailed":
+      return { ...s, updating: false, updateMessage: e.message };
     case "back":
       return back(s);
     case "restart":
       return {
         ...start({ dest: s.dest, prefix: s.prefix, preset: s.preset, check_updates: s.checkUpdates }),
+        update: s.update,
+        updateMessage: s.updateMessage,
+        updating: s.updating,
       };
     default:
       return s;
@@ -185,6 +203,7 @@ export function effect(before, after) {
 }
 
 /** Whether the banner's "update and restart" button works now (ADR 0007). */
-export function canUpdate(_s) {
-  return false;
+export function canUpdate(s) {
+  const busy = ["copying", "erasing", "undoing"].includes(s.step);
+  return Boolean(s.update) && s.update.kind === "install" && !busy && !s.updating;
 }
