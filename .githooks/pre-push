@@ -1,19 +1,31 @@
 #!/usr/bin/env bash
 # Installed as .githooks/pre-push; `make hooks` enables it. Soft: `--no-verify` skips it.
 # The local checks from .workflow.yml (commands.lint, typecheck, unit) before a branch
-# push. Pushes of only tags or deletions skip them.
+# push, on the commit being pushed (not the working tree, which may hold uncommitted
+# fixes): it is checked out in a temporary worktree. Pushes of only tags or deletions
+# skip them.
 set -euo pipefail
 
-run=0
+sha=""
 while read -r _ local_sha remote_ref _; do
   case "$remote_ref" in
     refs/tags/*) ;;
-    *) [[ $local_sha =~ ^0+$ ]] || run=1 ;;   # all zeros: a deletion (SHA-1 or SHA-256)
+    *) [[ $local_sha =~ ^0+$ ]] || sha=$local_sha ;;   # all zeros: a deletion (SHA-1 or SHA-256)
   esac
 done
-[ "$run" -eq 1 ] || exit 0
+[ -n "$sha" ] || exit 0
+
+repo=$(git rev-parse --show-toplevel)
+tree=$(mktemp -d "${TMPDIR:-/tmp}/exportpro-pre-push.XXXXXX")
+cleanup() { git -C "$repo" worktree remove --force "$tree" >/dev/null 2>&1 || true; }
+trap cleanup EXIT
+git -C "$repo" worktree add --quiet --detach "$tree" "$sha"
+cd "$tree"
+# Reuse the main checkout's build output, so a push doesn't rebuild everything.
+export CARGO_TARGET_DIR="$repo/target"
 # Without a C toolchain (e.g. Fedora Silverblue) cargo can't link: run them in the image.
 if command -v cc >/dev/null 2>&1; then
-  exec make lint typecheck test-unit
+  make lint typecheck test-unit
+else
+  make box T="lint typecheck test-unit" TARGET_DIR="$repo/target"
 fi
-exec make box T="lint typecheck test-unit"

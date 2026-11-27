@@ -4,10 +4,15 @@
 
 CONTAINER ?= $(shell command -v podman || command -v docker)
 # The image tag follows its inputs, so a changed Containerfile builds a new image.
-IMAGE ?= localhost/exportpro-dev:$(shell cat Containerfile rust-toolchain.toml | sha256sum | cut -c1-12)
+# (shasum where sha256sum is missing, as on stock macOS)
+IMAGE ?= localhost/exportpro-dev:$(shell cat Containerfile rust-toolchain.toml | { sha256sum 2>/dev/null || shasum -a 256; } | cut -c1-12)
 # The image's user is non-root: run it as the caller's uid so it can write to the checkout
-# and leaves files the caller owns (podman: keep-id maps the uid through the user namespace).
-AS_ME = --user "$$(id -u):$$(id -g)" $(if $(filter podman,$(notdir $(CONTAINER))),--userns=keep-id)
+# and leaves files the caller owns. Rootless podman maps that uid through its user
+# namespace (keep-id, which rootful podman refuses).
+ROOTLESS = $(if $(filter podman,$(notdir $(CONTAINER))),$(shell $(CONTAINER) info --format '{{.Host.Security.Rootless}}' 2>/dev/null))
+AS_ME = --user "$$(id -u):$$(id -g)" $(if $(filter true,$(ROOTLESS)),--userns=keep-id)
+# Build output of `make box`; the pre-push hook points it at the main checkout's.
+TARGET_DIR ?= $(CURDIR)/target
 T ?= lint typecheck test-unit security
 
 .PHONY: lint typecheck test-unit test-integration security hooks image box run ci bundle
@@ -53,8 +58,9 @@ image:
 
 # Crates downloaded in the image are kept on the host between runs.
 CARGO_REGISTRY ?= $(HOME)/.cargo/registry
-BOX_RUN = mkdir -p "$(CARGO_REGISTRY)" && $(CONTAINER) run --rm $(AS_ME) -v "$(CURDIR):/src:z" \
-	  -v "$(CARGO_REGISTRY):/usr/local/cargo/registry:z" -e CI -e CARGO_TARGET_DIR=/src/target/box $(IMAGE)
+BOX_RUN = mkdir -p "$(CARGO_REGISTRY)" "$(TARGET_DIR)" && $(CONTAINER) run --rm $(AS_ME) -v "$(CURDIR):/src:z" \
+	  -v "$(CARGO_REGISTRY):/usr/local/cargo/registry:z" -v "$(TARGET_DIR):/target:z" \
+	  -e CI -e CARGO_TARGET_DIR=/target/box $(IMAGE)
 
 ## box: run `make $(T)` in the image, with the checkout mounted
 box: image
