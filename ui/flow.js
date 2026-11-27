@@ -183,3 +183,8 @@ export function effect(before, after) {
       return null;
   }
 }
+
+/** Whether the banner's "update and restart" button works now (ADR 0007). */
+export function canUpdate(_s) {
+  return false;
+}
