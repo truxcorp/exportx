@@ -42,7 +42,8 @@ hooks:
 ## image: build the dev/CI image (skipped when this tag exists)
 image:
 	@[ -n "$(CONTAINER)" ] || { echo "needs podman or docker (or CONTAINER=...)" >&2; exit 1; }
-	$(CONTAINER) image inspect $(IMAGE) >/dev/null 2>&1 || $(CONTAINER) build -t $(IMAGE) -f Containerfile .
+	$(CONTAINER) image inspect $(IMAGE) >/dev/null 2>&1 || $(CONTAINER) build -t $(IMAGE) -f Containerfile . \
+	  || { scripts/podman-diagnose.sh $(CONTAINER); exit 1; }
 
 ## box: run `make $(T)` in the image, with the checkout mounted
 box: image
