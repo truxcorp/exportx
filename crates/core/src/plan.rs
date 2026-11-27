@@ -46,6 +46,8 @@ pub struct Entry {
     pub shoot: PathBuf,
     /// The file, relative to the shoot folder.
     pub file: PathBuf,
+    /// The metadata library crashed on this file: dated by its file time (to report).
+    pub date_unreadable: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -81,7 +83,7 @@ pub enum PlanError {
     /// can't be checked.
     CannotRead {
         path: PathBuf,
-        error: String,
+        error: crate::i18n::IoReason,
     },
 }
 
@@ -154,6 +156,7 @@ pub fn plan(groups: &[Group], req: &Request) -> Result<Plan, PlanError> {
                 dest: shoot.join(&file),
                 shoot: shoot.clone(),
                 file,
+                date_unreadable: f.date_unreadable,
             });
         }
     }
@@ -255,6 +258,6 @@ fn walk(dir: &Path, f: &mut impl FnMut(&str)) -> Result<(), PlanError> {
 fn cannot_read(path: &Path, e: &io::Error) -> PlanError {
     PlanError::CannotRead {
         path: path.to_path_buf(),
-        error: e.to_string(),
+        error: crate::i18n::IoReason::from(e),
     }
 }

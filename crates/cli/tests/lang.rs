@@ -258,3 +258,98 @@ fn erase_folders_named_like_plan_options_do_not_hide_lang() {
         stderr(&out)
     );
 }
+
+// Common OS errors in French.
+
+fn french(d: &Dirs, args: &[&str]) -> std::process::Output {
+    let data = d.home.join(".local/share");
+    exportpro_with(
+        &[
+            ("LANG", "fr_FR.UTF-8"),
+            ("HOME", d.home.to_str().unwrap()),
+            ("XDG_DATA_HOME", data.to_str().unwrap()),
+        ],
+        args,
+    )
+}
+
+fn no_access(path: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o000)).unwrap();
+}
+
+fn access(path: &std::path::Path, mode: u32) {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+}
+
+#[test]
+fn a_copy_refused_by_the_system_is_explained_in_french() {
+    let d = Dirs::new();
+    mk(&d.src, "2024-03-05 09:00", &["a.jpg"]);
+    no_access(&d.src.join("a.jpg"));
+
+    let out = french(&d, &command_args("apply", &d, &["--shoot", "s"]));
+
+    access(&d.src.join("a.jpg"), 0o644);
+    assert!(
+        stderr(&out).contains("permission refusée"),
+        "stderr: {}",
+        stderr(&out)
+    );
+    assert!(
+        !stderr(&out).contains("Permission denied"),
+        "stderr: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn an_original_that_cannot_be_read_at_erase_is_explained_in_french() {
+    let d = Dirs::new();
+    mk(&d.src, "2024-03-05 09:00", &["a.jpg"]);
+    assert_ok(&apply(&d, &["--shoot", "s"]));
+    let shoot = d.dest.join("2024/03/05/s");
+    no_access(&d.src.join("a.jpg"));
+
+    let out = french(&d, &["erase", shoot.to_str().unwrap()]);
+
+    access(&d.src.join("a.jpg"), 0o644);
+    assert!(
+        stderr(&out).contains("permission refusée"),
+        "stderr: {}",
+        stderr(&out)
+    );
+    assert!(
+        !stderr(&out).contains("Permission denied"),
+        "stderr: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn a_shoot_folder_that_cannot_be_read_is_explained_in_french() {
+    let d = Dirs::new();
+    let shoot = d.dest.join("2024/03/05/s");
+    mk(
+        &shoot.join("p/o/jpg"),
+        "2024-03-05 08:00",
+        &["txo_0001.jpg"],
+    );
+    no_access(&shoot);
+    mk(&d.src, "2024-03-05 09:00", &["a.jpg"]);
+
+    let out = french(&d, &plan_args(&d, &["--shoot", "s"]));
+
+    access(&shoot, 0o755);
+    assert!(
+        stderr(&out).contains("permission refusée"),
+        "stderr: {}",
+        stderr(&out)
+    );
+    assert!(
+        !stderr(&out).contains("Permission denied"),
+        "stderr: {}",
+        stderr(&out)
+    );
+}

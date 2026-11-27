@@ -21,7 +21,7 @@ async function init() {
   await tauri.event.listen("tauri://drag-drop", (e) => {
     const path = e.payload.paths && e.payload.paths[0];
     if (path && (state.step === "source" || state.step === "dest")) {
-      send({ type: state.step, path });
+      chooseFolder(state.step, path);
     }
   });
   render();
@@ -68,7 +68,20 @@ async function send(event) {
 
 async function pickFolder(step) {
   const path = await tauri.dialog.open({ directory: true, multiple: false });
-  if (path) send({ type: step, path });
+  if (path) chooseFolder(step, path);
+}
+
+/** Check a folder (picked, dropped or pasted) before moving on: errors stay on this screen. */
+async function chooseFolder(step, path) {
+  try {
+    const source = step === "dest" ? state.source : null;
+    const folder = await invoke("check_folder", { path, source, lang });
+    delete draft[`${step}Path`];
+    send({ type: step, path: folder });
+  } catch (err) {
+    notice = String(err);
+    render();
+  }
 }
 
 // --- rendering --------------------------------------------------------------------
@@ -137,7 +150,7 @@ function folderStep(step, titleKey, helpKey, value) {
   });
   const submit = (e) => {
     e.preventDefault();
-    if (path.value.trim()) send({ type: step, path: path.value.trim() });
+    if (path.value.trim()) chooseFolder(step, path.value.trim());
   };
   return el(
     "section",
@@ -304,7 +317,16 @@ function preview() {
       el(
         "tbody",
         {},
-        state.entries.map((e) => el("tr", {}, el("td", {}, e.name), el("td", {}, "→"), el("td", {}, e.dest))),
+        state.entries.map((e) =>
+          el(
+            "tr",
+            {},
+            el("td", {}, e.name),
+            el("td", {}, "→"),
+            el("td", {}, e.dest),
+            el("td", { class: "note" }, e.note || ""),
+          ),
+        ),
       ),
     ),
     el(

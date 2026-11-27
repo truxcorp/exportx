@@ -39,3 +39,4 @@ section.drop .actions { justify-content: center; }
 form.paste { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; margin-top: 16px; }
 form.paste label { margin: 0; flex-basis: 100%; font-weight: normal; color: var(--muted); }
 form.paste input { flex: 1 1 320px; max-width: 480px; font-family: ui-monospace, monospace; }
+table.preview td.note { color: var(--error); white-space: normal; font-family: system-ui, sans-serif; }

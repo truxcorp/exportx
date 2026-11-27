@@ -4,11 +4,35 @@ use std::path::Path;
 
 use chrono::NaiveDate;
 
+use crate::apply::CopyFailure;
 use crate::erase::{Keep, Which};
 use crate::layout::{LayoutError, MAX_WIDTH, TemplateError, Token};
 use crate::log::LineProblem;
 use crate::names::NameProblem;
 use crate::plan::PlanError;
+
+/// An error from the system, kept with its kind so it can be worded in the user's
+/// language (`Lang::io`); its text is the system's own message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IoReason {
+    pub kind: std::io::ErrorKind,
+    pub text: String,
+}
+
+impl From<&std::io::Error> for IoReason {
+    fn from(e: &std::io::Error) -> Self {
+        IoReason {
+            kind: e.kind(),
+            text: e.to_string(),
+        }
+    }
+}
+
+impl std::fmt::Display for IoReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.text)
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Lang {
@@ -73,19 +97,48 @@ impl Lang {
         }
     }
 
-    pub fn cannot_read(self, path: &Path, err: &std::io::Error) -> String {
+    /// A system error: common ones in the user's language, others in the system's words.
+    pub fn io(self, r: &IoReason) -> String {
+        use std::io::ErrorKind as K;
+        let fr = match r.kind {
+            K::NotFound => "fichier ou dossier introuvable",
+            K::PermissionDenied => "permission refusée",
+            K::StorageFull => "disque plein",
+            K::ReadOnlyFilesystem => "support en lecture seule",
+            K::AlreadyExists => "existe déjà",
+            _ => return r.text.clone(),
+        };
         match self {
-            Lang::En => format!("cannot read {}: {err}", path.display()),
-            Lang::Fr => format!("impossible de lire {} : {err}", path.display()),
+            Lang::En => r.text.clone(),
+            Lang::Fr => fr.to_owned(),
+        }
+    }
+
+    pub fn cannot_read(self, path: &Path, err: &IoReason) -> String {
+        match self {
+            Lang::En => format!("cannot read {}: {}", path.display(), self.io(err)),
+            Lang::Fr => format!("impossible de lire {} : {}", path.display(), self.io(err)),
+        }
+    }
+
+    /// Why one file of a copy failed.
+    pub fn copy_failure(self, f: &CopyFailure) -> String {
+        match (f, self) {
+            (CopyFailure::Copy(e), _) => self.io(e),
+            (CopyFailure::Log { log, error }, Lang::En) => {
+                format!("cannot write {}: {}", log.display(), self.io(error))
+            }
+            (CopyFailure::Log { log, error }, Lang::Fr) => {
+                format!("impossible d'écrire {} : {}", log.display(), self.io(error))
+            }
+            (CopyFailure::Folder(e), _) => self.io(e),
         }
     }
 
     pub fn plan_error(self, e: &PlanError, source: &Path) -> String {
         match (e, self) {
             (PlanError::NoFiles, _) => self.no_files(source),
-            (PlanError::CannotRead { path, error }, _) => {
-                self.cannot_read(path, &std::io::Error::other(error.clone()))
-            }
+            (PlanError::CannotRead { path, error }, _) => self.cannot_read(path, error),
             (PlanError::SeveralDays(_), _) => self.several_days().to_owned(),
             (PlanError::Exists(d), Lang::En) => {
                 format!("{} already exists: nothing was planned", d.display())
@@ -283,7 +336,12 @@ impl Lang {
                 },
                 Lang::En,
             ) => {
-                format!("the {} {} can't be read: {error}", which(w), path.display())
+                format!(
+                    "the {} {} can't be read: {}",
+                    which(w),
+                    path.display(),
+                    self.io(error)
+                )
             }
             (
                 Keep::Unreadable {
@@ -293,11 +351,12 @@ impl Lang {
                 },
                 Lang::Fr,
             ) => format!(
-                "{}{}{} {} est illisible : {error}",
+                "{}{}{} {} est illisible : {}",
                 article(w),
                 if *w == Which::Copy { " " } else { "" },
                 which(w),
-                path.display()
+                path.display(),
+                self.io(error)
             ),
             (Keep::Mismatch { which: w, path }, Lang::En) => {
                 format!(
@@ -314,24 +373,29 @@ impl Lang {
                 path.display()
             ),
             (Keep::CannotWriteLog { log, error }, Lang::En) => {
-                format!("cannot write {}: {error}", log.display())
+                format!("cannot write {}: {}", log.display(), self.io(error))
             }
             (Keep::CannotWriteLog { log, error }, Lang::Fr) => {
-                format!("impossible d'écrire {} : {error}", log.display())
+                format!("impossible d'écrire {} : {}", log.display(), self.io(error))
             }
             (Keep::RestoredNotLogged { log, error }, Lang::En) => {
-                format!("restored, but cannot write {}: {error}", log.display())
+                format!(
+                    "restored, but cannot write {}: {}",
+                    log.display(),
+                    self.io(error)
+                )
             }
             (Keep::RestoredNotLogged { log, error }, Lang::Fr) => {
                 format!(
-                    "restauré, mais impossible d'écrire {} : {error}",
-                    log.display()
+                    "restauré, mais impossible d'écrire {} : {}",
+                    log.display(),
+                    self.io(error)
                 )
             }
             (Keep::Trash(e), Lang::En) => format!("the Trash refused it: {e}"),
             (Keep::Trash(e), Lang::Fr) => format!("la corbeille l'a refusé : {e}"),
-            (Keep::CopyBack(e), Lang::En) => format!("copying it back failed: {e}"),
-            (Keep::CopyBack(e), Lang::Fr) => format!("la recopie a échoué : {e}"),
+            (Keep::CopyBack(e), Lang::En) => format!("copying it back failed: {}", self.io(e)),
+            (Keep::CopyBack(e), Lang::Fr) => format!("la recopie a échoué : {}", self.io(e)),
             (Keep::LogLine { line, problem }, Lang::En) => match problem {
                 LineProblem::Unreadable(e) => format!("line {line}: unreadable ({e}): skipped"),
                 LineProblem::Newer(v) => format!(
@@ -395,6 +459,37 @@ impl Lang {
             Lang::Fr => format!(
                 "{command} demande le ou les dossiers de séance qui contiennent exportpro.log"
             ),
+        }
+    }
+
+    pub fn folder_missing(self, path: &Path) -> String {
+        match self {
+            Lang::En => format!("This folder doesn't exist: {}", path.display()),
+            Lang::Fr => format!("Ce dossier n'existe pas : {}", path.display()),
+        }
+    }
+
+    pub fn not_a_folder(self, path: &Path) -> String {
+        match self {
+            Lang::En => format!("{} is not a folder", path.display()),
+            Lang::Fr => format!("{} n'est pas un dossier", path.display()),
+        }
+    }
+
+    pub fn dest_in_source(self) -> &'static str {
+        self.pick(
+            "The destination can't be the source folder or inside it",
+            "La destination ne peut pas être le dossier source ni s'y trouver",
+        )
+    }
+
+    /// Told once per file whose capture date crashed the metadata library.
+    pub fn date_unreadable(self, name: &str) -> String {
+        match self {
+            Lang::En => format!("{name}: capture date unreadable, the file's date is used"),
+            Lang::Fr => {
+                format!("{name} : date de prise de vue illisible, date du fichier utilisée")
+            }
         }
     }
 }

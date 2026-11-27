@@ -181,6 +181,9 @@ fn layout(
 
 fn run(cmd: &str, args: &[String], lang: Lang) -> Result<(), Failure> {
     let (plan, req) = make_plan(args, lang)?;
+    for e in plan.entries.iter().filter(|e| e.date_unreadable) {
+        eprintln!("exportpro: {}", lang.date_unreadable(&e.name));
+    }
     if cmd == "plan" {
         for e in &plan.entries {
             println!("{} -> {}", e.name, e.dest.display());
@@ -207,7 +210,10 @@ fn run(cmd: &str, args: &[String], lang: Lang) -> Result<(), Failure> {
         println!("{} -> {}", e.name, e.dest.display());
     }
     for (e, err) in &outcome.failed {
-        eprintln!("exportpro: {}", lang.failed_copy(&e.name, &e.dest, err));
+        eprintln!(
+            "exportpro: {}",
+            lang.failed_copy(&e.name, &e.dest, &lang.copy_failure(err))
+        );
     }
     for log in &outcome.logs {
         println!("log: {}", log.display());
@@ -297,8 +303,8 @@ fn make_plan(args: &[String], lang: Lang) -> Result<(Plan, Request), Failure> {
     let source = a.source.ok_or_else(|| lang.required("--source"))?;
     let dest = a.dest.ok_or_else(|| lang.required("--dest"))?;
     // Absolute, so the remembered destination means the same folder from anywhere.
-    let dest =
-        std::path::absolute(&dest).map_err(|e| Failure::Error(lang.cannot_read(&dest, &e)))?;
+    let dest = std::path::absolute(&dest)
+        .map_err(|e| Failure::Error(lang.cannot_read(&dest, &(&e).into())))?;
     let req = Request {
         dest,
         shoot: a.shoot.ok_or_else(|| lang.required("--shoot"))?,
@@ -312,8 +318,8 @@ fn make_plan(args: &[String], lang: Lang) -> Result<(Plan, Request), Failure> {
         },
         layout: layout(&a.preset, &a.shoot_path, &a.file_path, lang)?,
     };
-    let groups =
-        exportpro_core::scan(&source).map_err(|e| Failure::Error(lang.cannot_read(&source, &e)))?;
+    let groups = exportpro_core::scan(&source)
+        .map_err(|e| Failure::Error(lang.cannot_read(&source, &(&e).into())))?;
     let plan = exportpro_core::plan(&groups, &req).map_err(|e| match e {
         exportpro_core::PlanError::SeveralDays(days) => Failure::ChooseDay(days),
         e => Failure::Error(lang.plan_error(&e, &source)),

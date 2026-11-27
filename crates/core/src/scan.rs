@@ -7,7 +7,7 @@ use std::time::SystemTime;
 
 use chrono::{DateTime, Local, NaiveDateTime};
 
-use crate::dates::capture_date;
+use crate::dates::{CaptureDate, read_capture_date_with};
 
 /// Lower-case extensions treated as video (the bash version's VIDEO_EXTS).
 pub const VIDEO_EXTS: &[&str] = &[
@@ -32,6 +32,8 @@ pub struct SourceFile {
     pub ext: String,
     /// Capture date (stored in the file, else the file time), local time.
     pub date: NaiveDateTime,
+    /// The metadata library crashed reading this file: its file time was used.
+    pub date_unreadable: bool,
 }
 
 /// Files sharing a base name (`IMG_1.CR2` + `IMG_1.JPG`): they get one number.
@@ -58,6 +60,14 @@ impl Group {
 /// Top-level files of `dir` (paths made absolute), hidden files and files without a base name or extension
 /// skipped, grouped by lower-case base name and sorted by date, then base name.
 pub fn scan(dir: &Path) -> io::Result<Vec<Group>> {
+    scan_with(dir, |p| nom_exif::read_metadata(p))
+}
+
+/// `scan` with the metadata reader given: the seam tests use to stand in for the library.
+pub fn scan_with(
+    dir: &Path,
+    read: impl Fn(&Path) -> nom_exif::Result<nom_exif::Metadata>,
+) -> io::Result<Vec<Group>> {
     // Absolute, so the log names the originals wherever erase and undo run from.
     let dir = std::path::absolute(dir)?;
     let mut groups: Vec<Group> = Vec::new();
@@ -77,13 +87,16 @@ pub fn scan(dir: &Path) -> io::Result<Vec<Group>> {
         let Some((base, ext)) = split_name(&name) else {
             continue;
         };
+        let (date, date_unreadable) = match read_capture_date_with(&entry.path(), &read) {
+            CaptureDate::Stored(d) => (d, false),
+            CaptureDate::Missing => (file_date(&entry.path())?, false),
+            CaptureDate::Unreadable => (file_date(&entry.path())?, true),
+        };
         let file = SourceFile {
             path: entry.path(),
             ext: ext.to_lowercase(),
-            date: match capture_date(&entry.path()) {
-                Some(d) => d,
-                None => file_date(&entry.path())?,
-            },
+            date,
+            date_unreadable,
             name: name.clone(),
         };
         let key = base.to_lowercase();

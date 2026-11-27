@@ -39,6 +39,19 @@ pub enum PlanResult {
 pub struct PlannedFile {
     pub name: String,
     pub dest: String,
+    /// Something to tell about this file (its date couldn't be read), in the app's language.
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
+impl PlannedFile {
+    pub fn new(name: &str, dest: &str) -> Self {
+        PlannedFile {
+            name: name.to_owned(),
+            dest: dest.to_owned(),
+            note: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -78,8 +91,8 @@ fn make_plan(req: &PlanRequest, lang: Lang) -> Result<(exportpro_core::Plan, Req
         },
         layout,
     };
-    let groups =
-        exportpro_core::scan(&req.source).map_err(|e| error(lang.cannot_read(&req.source, &e)))?;
+    let groups = exportpro_core::scan(&req.source)
+        .map_err(|e| error(lang.cannot_read(&req.source, &(&e).into())))?;
     match exportpro_core::plan(&groups, &request) {
         Ok(plan) => Ok((plan, request)),
         Err(PlanError::SeveralDays(days)) => Err(PlanResult::Days { days }),
@@ -91,18 +104,19 @@ fn make_plan(req: &PlanRequest, lang: Lang) -> Result<(exportpro_core::Plan, Req
 pub fn plan(req: &PlanRequest, lang: Lang) -> PlanResult {
     match make_plan(req, lang) {
         Ok((plan, _)) => PlanResult::Plan {
-            entries: previewed_entries(&plan),
+            entries: previewed_entries(&plan, lang),
         },
         Err(other) => other,
     }
 }
 
-fn previewed_entries(plan: &exportpro_core::Plan) -> Vec<PlannedFile> {
+fn previewed_entries(plan: &exportpro_core::Plan, lang: Lang) -> Vec<PlannedFile> {
     plan.entries
         .iter()
         .map(|e| PlannedFile {
             name: e.name.clone(),
             dest: e.dest.to_string_lossy().replace('\\', "/"),
+            note: e.date_unreadable.then(|| lang.date_unreadable(&e.name)),
         })
         .collect()
 }
@@ -130,8 +144,14 @@ pub fn apply(
         Err(_) => return Err(changed_since_preview(lang)),
     };
     // Copy exactly what the preview showed: refuse if the card or the destination changed.
-    let now: Vec<PlannedFile> = previewed_entries(&plan);
-    if now != expected {
+    // Name and destination only: notes are worded in a language that may have changed.
+    let now: Vec<PlannedFile> = previewed_entries(&plan, lang);
+    let same = now.len() == expected.len()
+        && now
+            .iter()
+            .zip(expected)
+            .all(|(a, b)| a.name == b.name && a.dest == b.dest);
+    if !same {
         return Err(changed_since_preview(lang));
     }
     let outcome = exportpro_core::apply_with_progress(&plan, &request, progress);
@@ -158,7 +178,7 @@ pub fn apply(
         failed: outcome
             .failed
             .into_iter()
-            .map(|(e, why)| (e.name, why))
+            .map(|(e, why)| (e.name, lang.copy_failure(&why)))
             .collect(),
         shoots,
     })
@@ -233,4 +253,36 @@ pub fn set_lang(path: &Path, lang: Lang) -> Result<(), String> {
         ..Settings::load_from(path)
     };
     saved.save_to(path).map_err(|e| e.to_string())
+}
+
+/// A folder the user pasted, picked or dropped, checked as soon as it is confirmed:
+/// `~` expanded, made absolute, existing and a folder. For the destination, `source` is
+/// the source folder: the destination can't be it or inside it. Returns the folder to
+/// use, or the message to show on the same screen.
+pub fn check_folder(path: &str, source: Option<&Path>, lang: Lang) -> Result<PathBuf, String> {
+    // Taken as is: a folder's name may start or end with a space (the UI trims pasted text).
+    let expanded = match path.strip_prefix('~') {
+        Some(rest) if rest.is_empty() || rest.starts_with(['/', '\\']) => {
+            let home = std::env::home_dir().ok_or_else(|| lang.folder_missing(Path::new(path)))?;
+            home.join(rest.trim_start_matches(['/', '\\']))
+        }
+        _ => PathBuf::from(path),
+    };
+    let folder = std::path::absolute(&expanded).map_err(|_| lang.folder_missing(&expanded))?;
+    match std::fs::metadata(&folder) {
+        Ok(m) if m.is_dir() => {}
+        Ok(_) => return Err(lang.not_a_folder(&folder)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Err(lang.folder_missing(&folder));
+        }
+        Err(e) => return Err(lang.cannot_read(&folder, &(&e).into())),
+    }
+    if let Some(source) = source {
+        // Compare the real folders: links or `..` must not hide the source.
+        let real = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+        if real(&folder).starts_with(real(source)) {
+            return Err(lang.dest_in_source().to_owned());
+        }
+    }
+    Ok(folder)
 }

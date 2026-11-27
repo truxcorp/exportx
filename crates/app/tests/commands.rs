@@ -89,10 +89,10 @@ fn plan_returns_the_preview() {
     assert_eq!(
         result,
         PlanResult::Plan {
-            entries: vec![PlannedFile {
-                name: "a.jpg".into(),
-                dest: "2024/03/05/s/p/o/jpg/txo_0001.jpg".into()
-            }]
+            entries: vec![PlannedFile::new(
+                "a.jpg",
+                "2024/03/05/s/p/o/jpg/txo_0001.jpg"
+            )]
         }
     );
 }
@@ -171,10 +171,10 @@ fn the_lisible_preset_is_used() {
     assert_eq!(
         result,
         PlanResult::Plan {
-            entries: vec![PlannedFile {
-                name: "a.jpg".into(),
-                dest: "2024/03/05/s/photo/originaux/jpg/txo_0001.jpg".into()
-            }]
+            entries: vec![PlannedFile::new(
+                "a.jpg",
+                "2024/03/05/s/photo/originaux/jpg/txo_0001.jpg"
+            )]
         }
     );
 }
@@ -257,4 +257,110 @@ fn copy_refuses_when_the_card_changed_since_the_preview() {
     let message = result.unwrap_err();
     assert!(message.contains("changed since the preview"), "{message}");
     assert!(!d.dest.join("2024").exists(), "something was copied");
+}
+
+// A pasted path is checked as soon as it is confirmed.
+
+#[test]
+fn an_existing_folder_is_accepted_and_made_absolute() {
+    let d = dirs();
+
+    let checked = commands::check_folder(d.src.to_str().unwrap(), None, Lang::En);
+
+    assert_eq!(checked, Ok(d.src.clone()));
+}
+
+#[test]
+fn a_tilde_is_the_home_folder() {
+    utc();
+    let home = std::env::var("HOME").unwrap();
+    let checked = commands::check_folder("~", None, Lang::En);
+
+    assert_eq!(checked, Ok(PathBuf::from(home)));
+}
+
+#[test]
+fn a_missing_folder_or_a_file_is_refused_in_the_apps_language() {
+    let d = dirs();
+    let missing = d.src.join("nope");
+    fs::write(d.src.join("a.jpg"), "a").unwrap();
+
+    let gone = commands::check_folder(missing.to_str().unwrap(), None, Lang::Fr);
+    let file = commands::check_folder(d.src.join("a.jpg").to_str().unwrap(), None, Lang::Fr);
+
+    assert_eq!(
+        gone,
+        Err(format!("Ce dossier n'existe pas : {}", missing.display()))
+    );
+    assert_eq!(
+        file,
+        Err(format!(
+            "{} n'est pas un dossier",
+            d.src.join("a.jpg").display()
+        ))
+    );
+}
+
+#[test]
+fn the_destination_cannot_be_the_source_or_inside_it() {
+    let d = dirs();
+    let inside = d.src.join("tri");
+    fs::create_dir_all(&inside).unwrap();
+
+    let same = commands::check_folder(d.src.to_str().unwrap(), Some(&d.src), Lang::En);
+    let within = commands::check_folder(inside.to_str().unwrap(), Some(&d.src), Lang::En);
+    let elsewhere = commands::check_folder(d.dest.to_str().unwrap(), Some(&d.src), Lang::En);
+
+    assert_eq!(
+        same,
+        Err("The destination can't be the source folder or inside it".into())
+    );
+    assert_eq!(
+        within,
+        Err("The destination can't be the source folder or inside it".into())
+    );
+    assert_eq!(elsewhere, Ok(d.dest.clone()));
+}
+
+// Review of PR #20.
+
+#[test]
+fn notes_in_another_language_do_not_count_as_a_changed_preview() {
+    utc();
+    let d = dirs();
+    mk(&d.src, "a.jpg", 0, 3600);
+    let req = request(&d, DateRequest::Files);
+    let mut expected = previewed(&req);
+    expected[0].note = Some("noté dans l'autre langue".into());
+
+    let outcome = commands::apply(&req, &expected, Lang::En, &d.settings, |_, _| {});
+
+    assert_eq!(outcome.map(|o| o.copied), Ok(1));
+}
+
+#[test]
+fn a_chosen_folder_is_taken_as_is_spaces_included() {
+    let d = dirs();
+    let spaced = d.src.join("DCIM ");
+    fs::create_dir_all(&spaced).unwrap();
+
+    let checked = commands::check_folder(spaced.to_str().unwrap(), None, Lang::En);
+
+    assert_eq!(checked, Ok(spaced));
+}
+
+#[test]
+fn a_folder_that_cannot_be_reached_says_so_instead_of_missing() {
+    use std::os::unix::fs::PermissionsExt;
+    let d = dirs();
+    let locked = d.src.join("locked");
+    let inner = locked.join("photos");
+    fs::create_dir_all(&inner).unwrap();
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
+
+    let checked = commands::check_folder(inner.to_str().unwrap(), None, Lang::Fr);
+
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
+    let message = checked.unwrap_err();
+    assert!(message.contains("permission refusée"), "{message}");
 }

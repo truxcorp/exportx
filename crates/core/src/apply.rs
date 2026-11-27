@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
+use crate::i18n::IoReason;
 use crate::log::{Event, LayoutRecord, LogLine, append};
 use crate::plan::{Entry, Plan, Request};
 
@@ -14,9 +15,20 @@ use crate::plan::{Entry, Plan, Request};
 pub struct Outcome {
     pub copied: Vec<Entry>,
     /// The entry and why its copy failed.
-    pub failed: Vec<(Entry, String)>,
+    pub failed: Vec<(Entry, CopyFailure)>,
     /// Every `exportpro.log` written, absolute.
     pub logs: Vec<PathBuf>,
+}
+
+/// Why one file of a copy failed; `i18n::Lang::copy_failure` words it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CopyFailure {
+    /// Copying or verifying the file failed (the partial copy is removed).
+    Copy(IoReason),
+    /// The copy is there but the log couldn't record it, so erase and undo can't use it.
+    Log { log: PathBuf, error: IoReason },
+    /// An empty folder for edited files couldn't be created.
+    Folder(IoReason),
 }
 
 /// Copy every entry of `plan` into `req.dest`, logging each one in its shoot folder's
@@ -46,14 +58,18 @@ pub fn apply_with_progress(
             }
             Err(err) => {
                 let line = LogLine::new(Event::Failed, e, &layout).with_error(err.to_string());
-                (line, Some(err.to_string()))
+                (line, Some(CopyFailure::Copy(IoReason::from(&err))))
             }
         };
         match (append(&log, &line), copy_error) {
             // A copy the log doesn't know about can't be erased or undone: a failure.
-            (Err(err), _) => outcome
-                .failed
-                .push((e.clone(), format!("cannot write {}: {err}", log.display()))),
+            (Err(err), _) => outcome.failed.push((
+                e.clone(),
+                CopyFailure::Log {
+                    log: log.clone(),
+                    error: IoReason::from(&err),
+                },
+            )),
             (Ok(()), Some(err)) => outcome.failed.push((e.clone(), err)),
             (Ok(()), None) => outcome.copied.push(e.clone()),
         }
@@ -70,8 +86,11 @@ pub fn apply_with_progress(
                 dest: dir.clone(),
                 shoot: PathBuf::new(),
                 file: PathBuf::new(),
+                date_unreadable: false,
             };
-            outcome.failed.push((e, err.to_string()));
+            outcome
+                .failed
+                .push((e, CopyFailure::Folder(IoReason::from(&err))));
         }
     }
     outcome

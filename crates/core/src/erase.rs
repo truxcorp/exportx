@@ -6,6 +6,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::apply::{copy_verified, hash_file};
+use crate::i18n::IoReason;
 use crate::log::{self, Event, LOG_NAME, LineProblem, LogLine};
 
 /// What happened to each original.
@@ -30,7 +31,7 @@ pub enum Keep {
     Unreadable {
         which: Which,
         path: PathBuf,
-        error: String,
+        error: IoReason,
     },
     /// No longer the size and SHA-256 the log recorded.
     Mismatch {
@@ -39,17 +40,17 @@ pub enum Keep {
     },
     CannotWriteLog {
         log: PathBuf,
-        error: String,
+        error: IoReason,
     },
     /// Undo restored it but couldn't log that.
     RestoredNotLogged {
         log: PathBuf,
-        error: String,
+        error: IoReason,
     },
     /// The system Trash refused it.
     Trash(String),
     /// Copying it back failed.
-    CopyBack(String),
+    CopyBack(IoReason),
     /// A log line that couldn't be used, skipped.
     LogLine {
         line: usize,
@@ -94,7 +95,7 @@ pub fn erase(shoot: &Path) -> io::Result<Outcome> {
         {
             let why = Keep::CannotWriteLog {
                 log: log_path.clone(),
-                error: e.to_string(),
+                error: IoReason::from(&e),
             };
             outcome.kept.push((line.source.clone(), why));
             continue;
@@ -123,14 +124,14 @@ pub fn undo(shoot: &Path) -> io::Result<Outcome> {
         let restored = check(&copy, &line, Which::Copy).and_then(|()| {
             copy_verified(&copy, &line.source)
                 .map(|_| ())
-                .map_err(|e| Keep::CopyBack(e.to_string()))
+                .map_err(|e| Keep::CopyBack(IoReason::from(&e)))
         });
         match restored {
             Ok(()) => {
                 if let Err(e) = log::append(&log_path, &line.follow_up(Event::Restored)) {
                     let why = Keep::RestoredNotLogged {
                         log: log_path.clone(),
-                        error: e.to_string(),
+                        error: IoReason::from(&e),
                     };
                     outcome.kept.push((line.source.clone(), why));
                 }
@@ -159,7 +160,7 @@ fn check(path: &Path, line: &LogLine, which: Which) -> Result<(), Keep> {
     let (size, sha256) = hash_file(path).map_err(|e| Keep::Unreadable {
         which,
         path: path.to_path_buf(),
-        error: e.to_string(),
+        error: IoReason::from(&e),
     })?;
     if Some(size) == line.size && line.sha256.as_deref() == Some(sha256.as_str()) {
         Ok(())

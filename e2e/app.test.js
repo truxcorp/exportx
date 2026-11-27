@@ -165,3 +165,31 @@ test("a pasted path survives the language switch; an emptied prefix shows the de
     await app.close();
   }
 });
+
+test("a pasted folder is checked right away, on its own screen", async () => {
+  const app = await launch({ lang: "fr_FR.UTF-8" });
+  try {
+    mk(join(app.home, "carte"), "2024-03-05T09:00", ["a.jpg"]);
+
+    await app.type("#source-path", join(app.home, "nulle-part"));
+    await app.click("#source-ok");
+    await app.waitText("Ce dossier n'existe pas");
+    assert.ok(await app.has("#source-path"), "still on the source screen");
+    await app.screenshot("2-source-missing");
+
+    await app.type("#source-path", "~/carte");
+    await app.click("#source-ok");
+    await app.type("#dest-path", "~/carte");
+    await app.click("#dest-ok");
+    await app.waitText("La destination ne peut pas être le dossier source");
+    assert.ok(await app.has("#dest-path"), "still on the destination screen");
+
+    await app.type("#dest-path", "~");
+    await app.click("#dest-ok");
+    await app.type("#shoot", "s");
+    await app.click("#details-ok");
+    await app.waitText("a.jpg");
+  } finally {
+    await app.close();
+  }
+});

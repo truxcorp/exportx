@@ -82,6 +82,12 @@ async fn undo(shoots: Vec<PathBuf>, lang: String) -> Result<LogOutcome, String> 
         .map_err(|e| e.to_string())
 }
 
+/// A folder the user chose, checked before the screen moves on (see `commands::check_folder`).
+#[tauri::command]
+fn check_folder(path: String, source: Option<PathBuf>, lang: String) -> Result<PathBuf, String> {
+    commands::check_folder(&path, source.as_deref(), Lang::parse(&lang))
+}
+
 /// Show a shoot folder in the file manager.
 #[tauri::command]
 fn open_folder(path: PathBuf) -> Result<(), String> {
@@ -100,7 +106,8 @@ fn main() {
             apply,
             erase,
             undo,
-            open_folder
+            open_folder,
+            check_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running ExportPro");
