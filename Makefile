@@ -15,7 +15,7 @@ AS_ME = --user "$$(id -u):$$(id -g)" $(if $(filter true,$(ROOTLESS)),--userns=ke
 TARGET_DIR ?= $(CURDIR)/target
 T ?= lint typecheck test-unit test-e2e security
 
-.PHONY: lint typecheck test-unit test-integration test-e2e security hooks image box run ci bundle bundle-macos
+.PHONY: lint typecheck test-unit test-integration test-e2e security hooks image box run ci bundle bundle-macos release release-check release-linux release-macos release-publish
 
 ## lint: rustfmt check and clippy (warnings fail)
 lint:
@@ -56,6 +56,26 @@ bundle-macos:
 	npm ci --no-audit --no-fund
 	npx tauri build --ci --bundles app,dmg
 
+## release: tag main as v$(V) and push the tag; the release workflow builds and publishes it (ADR 0007)
+release:
+	scripts/release.sh tag "$(V)"
+
+## release-check: the checked-out tag is on main (the release workflow's first step)
+release-check:
+	scripts/release.sh check "$(V)"
+
+## release-linux: signed AppImage and .deb of version $(V) in dist/ (needs TAURI_SIGNING_PRIVATE_KEY); in the image: make box T=release-linux V=...
+release-linux:
+	scripts/release.sh build-linux "$(V)"
+
+## release-macos: signed Mac app (.app.tar.gz, .dmg) of version $(V) in dist/ (run on macOS)
+release-macos:
+	scripts/release.sh build-macos "$(V)"
+
+## release-publish: latest.json for the updater, then the GitHub Release of v$(V) with the files in $(DIR)
+release-publish:
+	scripts/release.sh publish "$(V)" "$(DIR)"
+
 ## hooks: once per clone: gitleaks on each commit, lint/typecheck/unit before each push
 hooks:
 	git config core.hooksPath .githooks
@@ -71,11 +91,12 @@ image:
 CARGO_REGISTRY ?= $(HOME)/.cargo/registry
 BOX_RUN = mkdir -p "$(CARGO_REGISTRY)" "$(TARGET_DIR)" && $(CONTAINER) run --rm $(AS_ME) -v "$(CURDIR):/src:z" \
 	  -v "$(CARGO_REGISTRY):/usr/local/cargo/registry:z" -v "$(TARGET_DIR):/target:z" \
-	  --shm-size 512m -e CI -e CARGO_TARGET_DIR=/target/box $(IMAGE)
+	  --shm-size 512m -e CI -e CARGO_TARGET_DIR=/target/box \
+	  -e TAURI_SIGNING_PRIVATE_KEY -e TAURI_SIGNING_PRIVATE_KEY_PASSWORD $(IMAGE)
 
 ## box: run `make $(T)` in the image, with the checkout mounted
 box: image
-	$(BOX_RUN) make $(T)
+	$(BOX_RUN) make $(T) $(if $(V),V="$(V)")
 
 ## run: run any command in the image, e.g. make run C="cargo test -p exportpro-core"
 run: image

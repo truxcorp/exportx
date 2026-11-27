@@ -56,9 +56,17 @@ exportx erase|undo <dossier de la séance>
 exportx undo --run <id> <dossier de la séance>
 ```
 
+## Publier une version
+
+`make release V=1.2.3` (sur un `main` à jour et propre) crée l'étiquette `v1.2.3` et l'envoie.
+Le workflow *release* construit alors l'AppImage et le `.deb` Linux et le `.dmg` Apple Silicon,
+signe les fichiers de mise à jour et les publie sur la page
+[Releases](https://github.com/truxcorp/exportx/releases) avec `latest.json`, que lit la mise à
+jour de l'application (ADR 0007). Une version comme `1.2.3-rc.1` donne une pré-version.
+
 ## Récupérer une version construite
 
-Les versions construites restent sur l'exécution GitHub, dans *Artifacts*.
+Entre deux versions, les versions construites restent sur l'exécution GitHub, dans *Artifacts*.
 
 - **Linux** : Actions → *build* → la dernière exécution sur `main` → `exportx-linux`.
 - **macOS (Apple Silicon)** : ne se lance jamais tout seul. Chaque construction utilise

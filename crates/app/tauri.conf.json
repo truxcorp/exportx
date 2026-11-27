@@ -41,5 +41,13 @@
         "depends": []
       }
     }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEZFOUY0NEQ4N0I2MjBEREQKUldUZERXSjcyRVNmL3Z6MXRkeTh4NWJzaW9vT1FJTkwxOTV1TEtoeld1R25VQVpXNTRUYlR4WXUK",
+      "endpoints": [
+        "https://github.com/truxcorp/exportx/releases/latest/download/latest.json"
+      ]
+    }
   }
 }
