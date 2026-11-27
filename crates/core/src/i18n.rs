@@ -132,6 +132,12 @@ impl Lang {
                 format!("impossible d'écrire {} : {}", log.display(), self.io(error))
             }
             (CopyFailure::Folder(e), _) => self.io(e),
+            (CopyFailure::NotCopiedDiskFull, _) => self
+                .pick(
+                    "not copied: the destination is full",
+                    "non copié : la destination est pleine",
+                )
+                .to_owned(),
         }
     }
 
@@ -140,6 +146,7 @@ impl Lang {
             (PlanError::NoFiles, _) => self.no_files(source),
             (PlanError::CannotRead { path, error }, _) => self.cannot_read(path, error),
             (PlanError::SeveralDays(_), _) => self.several_days().to_owned(),
+            (PlanError::NoRoom { needed, free }, _) => self.no_room(*needed, *free),
             (PlanError::Exists(d), Lang::En) => {
                 format!("{} already exists: nothing was planned", d.display())
             }
@@ -490,6 +497,44 @@ impl Lang {
             Lang::Fr => {
                 format!("{name} : date de prise de vue illisible, date du fichier utilisée")
             }
+        }
+    }
+
+    /// A size in decimal units with one decimal, as file managers show it:
+    /// `12.4 GB` / `12,4 Go`.
+    pub fn size(self, bytes: u64) -> String {
+        let units: [&str; 5] = match self {
+            Lang::En => ["B", "kB", "MB", "GB", "TB"],
+            Lang::Fr => ["o", "ko", "Mo", "Go", "To"],
+        };
+        if bytes < 1000 {
+            return format!("{bytes} {}", units[0]);
+        }
+        let mut value = bytes as f64;
+        let mut unit = 0;
+        // 999.95 would print as "1000.0": step up once it rounds to 1000.
+        while value >= 999.95 && unit < units.len() - 1 {
+            value /= 1000.0;
+            unit += 1;
+        }
+        let text = format!("{value:.1}");
+        let text = match self {
+            Lang::En => text,
+            Lang::Fr => text.replace('.', ","),
+        };
+        format!("{text} {}", units[unit])
+    }
+
+    pub fn no_room(self, needed: u64, free: u64) -> String {
+        let missing = self.size(needed.saturating_sub(free));
+        let (needed, free) = (self.size(needed), self.size(free));
+        match self {
+            Lang::En => format!(
+                "Not enough room at the destination: {missing} missing ({needed} needed, {free} free)"
+            ),
+            Lang::Fr => format!(
+                "Pas assez de place sur la destination : il manque {missing} ({needed} nécessaires, {free} libres)"
+            ),
         }
     }
 }

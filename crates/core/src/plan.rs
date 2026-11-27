@@ -79,6 +79,12 @@ pub enum PlanError {
     },
     /// Something already exists at this destination (relative to `Request::dest`).
     Exists(PathBuf),
+    /// The destination's disk can't hold the copies: bytes `needed` (margin included)
+    /// and `free`.
+    NoRoom {
+        needed: u64,
+        free: u64,
+    },
     /// A folder or file of the destination can't be read, so numbers or free names
     /// can't be checked.
     CannotRead {
@@ -169,7 +175,37 @@ pub fn plan(groups: &[Group], req: &Request) -> Result<Plan, PlanError> {
             Err(err) => return Err(cannot_read(&path, &err)),
         }
     }
+    check_room(req, &entries)?;
     Ok(Plan { entries, edited })
+}
+
+/// Room kept on top of the files: the log, the folders, the file system's own blocks.
+pub const ROOM_MARGIN: u64 = 64 * 1024 * 1024;
+
+/// Refuse a plan whose copies can't fit on the destination's disk.
+fn check_room(req: &Request, entries: &[Entry]) -> Result<(), PlanError> {
+    let mut needed = ROOM_MARGIN;
+    for e in entries {
+        let size = fs::metadata(&e.source)
+            .map_err(|err| cannot_read(&e.source, &err))?
+            .len();
+        needed = needed.saturating_add(size);
+    }
+    // The destination may not exist yet: ask about its nearest existing folder (absolute,
+    // so a relative path ends at the current folder, not at "").
+    let dest = std::path::absolute(&req.dest).map_err(|err| cannot_read(&req.dest, &err))?;
+    let mut at = dest.as_path();
+    while !at.exists() {
+        match at.parent() {
+            Some(parent) => at = parent,
+            None => break,
+        }
+    }
+    let free = fs4::available_space(at).map_err(|err| cannot_read(at, &err))?;
+    if needed > free {
+        return Err(PlanError::NoRoom { needed, free });
+    }
+    Ok(())
 }
 
 fn check(name: &str) -> Result<(), PlanError> {

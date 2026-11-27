@@ -29,6 +29,8 @@ pub enum CopyFailure {
     Log { log: PathBuf, error: IoReason },
     /// An empty folder for edited files couldn't be created.
     Folder(IoReason),
+    /// Not tried: the destination filled up on an earlier file.
+    NotCopiedDiskFull,
 }
 
 /// Copy every entry of `plan` into `req.dest`, logging each one in its shoot folder's
@@ -38,39 +40,55 @@ pub fn apply(plan: &Plan, req: &Request) -> Outcome {
     apply_with_progress(plan, req, |_, _| {})
 }
 
-/// `apply`, calling `progress(done, total)` after each file.
-pub fn apply_with_progress(
+/// `apply_with_progress` with the copy function given: the seam tests use to fill the
+/// disk.
+pub fn apply_using(
     plan: &Plan,
     req: &Request,
+    mut copy: impl FnMut(&Path, &Path) -> io::Result<(u64, String)>,
     mut progress: impl FnMut(usize, usize),
 ) -> Outcome {
     let layout = LayoutRecord::from(&req.layout);
     let mut outcome = Outcome::default();
     let total = plan.entries.len();
+    // Once the destination is full, trying the other files only wastes time.
+    let mut full = false;
     for (i, e) in plan.entries.iter().enumerate() {
+        if full {
+            outcome
+                .failed
+                .push((e.clone(), CopyFailure::NotCopiedDiskFull));
+            progress(i + 1, total);
+            continue;
+        }
         let log = req.dest.join(&e.shoot).join(crate::log::LOG_NAME);
         let dest = req.dest.join(&e.dest);
-        let (line, copy_error) = match copy_verified(&e.source, &dest) {
+        let (line, copy_error) = match copy(&e.source, &dest) {
             Ok((size, sha256)) => {
                 strip_extended_attributes(&dest);
                 let line = LogLine::new(Event::Copied, e, &layout).with_hash(size, sha256);
                 (line, None)
             }
             Err(err) => {
+                full = is_full(&err);
                 let line = LogLine::new(Event::Failed, e, &layout).with_error(err.to_string());
                 (line, Some(CopyFailure::Copy(IoReason::from(&err))))
             }
         };
         match (append(&log, &line), copy_error) {
+            // The copy's own error matters most (the log often fails for the same reason).
+            (_, Some(err)) => outcome.failed.push((e.clone(), err)),
             // A copy the log doesn't know about can't be erased or undone: a failure.
-            (Err(err), _) => outcome.failed.push((
-                e.clone(),
-                CopyFailure::Log {
-                    log: log.clone(),
-                    error: IoReason::from(&err),
-                },
-            )),
-            (Ok(()), Some(err)) => outcome.failed.push((e.clone(), err)),
+            (Err(err), None) => {
+                full = is_full(&err);
+                outcome.failed.push((
+                    e.clone(),
+                    CopyFailure::Log {
+                        log: log.clone(),
+                        error: IoReason::from(&err),
+                    },
+                ));
+            }
             (Ok(()), None) => outcome.copied.push(e.clone()),
         }
         if log.exists() && !outcome.logs.contains(&log) {
@@ -79,7 +97,14 @@ pub fn apply_with_progress(
         progress(i + 1, total);
     }
     for dir in &plan.edited {
-        if let Err(err) = fs::create_dir_all(req.dest.join(dir)) {
+        let failure = if full {
+            Some(CopyFailure::NotCopiedDiskFull)
+        } else {
+            fs::create_dir_all(req.dest.join(dir))
+                .err()
+                .map(|err| CopyFailure::Folder(IoReason::from(&err)))
+        };
+        if let Some(failure) = failure {
             let e = Entry {
                 name: dir.display().to_string(),
                 source: PathBuf::new(),
@@ -88,12 +113,27 @@ pub fn apply_with_progress(
                 file: PathBuf::new(),
                 date_unreadable: false,
             };
-            outcome
-                .failed
-                .push((e, CopyFailure::Folder(IoReason::from(&err))));
+            outcome.failed.push((e, failure));
         }
     }
     outcome
+}
+
+/// The destination has no room left: disk full or the user's quota reached.
+fn is_full(err: &io::Error) -> bool {
+    matches!(
+        err.kind(),
+        io::ErrorKind::StorageFull | io::ErrorKind::QuotaExceeded
+    )
+}
+
+/// `apply`, calling `progress(done, total)` after each file.
+pub fn apply_with_progress(
+    plan: &Plan,
+    req: &Request,
+    progress: impl FnMut(usize, usize),
+) -> Outcome {
+    apply_using(plan, req, copy_verified, progress)
 }
 
 /// Copy `src` to a new file `dst` (never overwriting) with the source's file times, fsync
