@@ -370,3 +370,32 @@ test("installing: once, then a failure shows why and allows a retry", () => {
   assert.equal(s.updateMessage, "bad signature");
   assert.equal(canUpdate(s), true);
 });
+
+test("U5, the other way: no copy, erase or undo starts while an update installs", () => {
+  let s = atPreview({ movable: false, copy_size: "5 B", copy_fits: true });
+  s = next(s, { type: "updateChecked", offer: install, manual: false });
+  s = next(s, { type: "install" });
+  assert.equal(next(s, { type: "confirm" }).step, "preview", "no copy");
+
+  let r = atPreview({ movable: false, copy_size: "5 B", copy_fits: true });
+  r = next(r, { type: "confirm" });
+  r = next(r, { type: "copied", outcome: { copied: 1, moved: 0, failed: [], shoots: ["/p/s"], run: "r" } });
+  r = next(r, { type: "updateChecked", offer: install, manual: false });
+  r = next(r, { type: "install" });
+  assert.equal(next(r, { type: "erase", yes: true }).step, "result", "no erase");
+
+  let m = atPreview({ movable: true, copy_size: "5 B", copy_fits: true });
+  m = next(m, { type: "confirm" });
+  m = next(m, { type: "copied", outcome: { copied: 0, moved: 1, failed: [], shoots: ["/p/s"], run: "r" } });
+  m = next(m, { type: "updateChecked", offer: install, manual: false });
+  m = next(m, { type: "install" });
+  assert.equal(next(m, { type: "undo" }).step, "result", "no undo");
+  m = next(m, { type: "installFailed", message: "x" });
+  assert.equal(next(m, { type: "undo" }).step, "undoing", "allowed again once the install failed");
+});
+
+test("a new export clears the last manual check's message", () => {
+  let s = next(atDetails(), { type: "updateChecked", offer: null, manual: true });
+  s = next(s, { type: "restart" });
+  assert.equal(s.updateMessage, "");
+});
