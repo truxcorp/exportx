@@ -239,6 +239,10 @@ test("the information panel lists the formats; the options remember the update c
     await app.click("[data-action=info]");
     await app.waitText("Tout autre fichier est copié comme une photo");
     const info = await app.text();
+    assert.match(info, /^ExportX/, "the app's name heads the window");
+    assert.match(info, /ExportX \d+\.\d+\.\d+/);
+    assert.match(info, /exportx\.log/);
+    assert.ok(!info.includes("ExportPro"), "no old name left");
     assert.match(info, /mov, mp4, m4v/);
     assert.match(info, /cr3/);
     await app.screenshot("9-info");
@@ -250,7 +254,7 @@ test("the information panel lists the formats; the options remember the update c
     await app.screenshot("10-options");
     await app.click("#check-updates");
     // Saved asynchronously: wait for the file rather than read it at once.
-    const file = join(app.home, ".config/exportpro/settings.toml");
+    const file = join(app.home, ".config/exportx/settings.toml");
     const saved = () => (existsSync(file) ? readFileSync(file, "utf8") : "");
     for (let i = 0; i < 50 && !/check_updates = false/.test(saved()); i++) {
       await new Promise((r) => setTimeout(r, 100));

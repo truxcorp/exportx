@@ -40,7 +40,7 @@ test-integration:
 ## test-e2e: the real app driven through WebDriver under Xvfb (ADR 0005); in the image: make box T=test-e2e
 test-e2e:
 	cargo build -p exportpro-app --locked
-	EXPORTPRO_APP="$${CARGO_TARGET_DIR:-target}/debug/exportpro-app" node --test --test-concurrency=1 e2e/*.test.js
+	EXPORTX_APP="$${CARGO_TARGET_DIR:-target}/debug/exportx-app" node --test --test-concurrency=1 e2e/*.test.js
 
 ## security: gitleaks, semgrep, trivy; high or worse fails
 security:

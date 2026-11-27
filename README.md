@@ -1,10 +1,13 @@
-# ExportPro
+# ExportX
 
 *[English version](README.en.md)*
 
 Copie les photos et vidéos d'une carte d'appareil photo dans une arborescence datée, renommées
 `<préfixe>_0001.<ext>` dans l'ordre de prise de vue. Ensuite, si vous le demandez, les originaux
 partent à la corbeille, ce qui peut être annulé.
+
+Anciennement ExportPro : les séances qu'il a copiées gardent leur `exportpro.log` (lu et
+complété), et ses réglages sont repris au premier lancement.
 
 ## État du projet
 
@@ -26,7 +29,7 @@ Plan et décisions : `docs/plan/tauri-prototype.md`, `docs/adr/`.
    chaque fichier prend sa date de prise de vue (EXIF, QuickTime). Si les fichiers couvrent
    plusieurs jours, vous choisissez un seul jour, ou un dossier par jour.
 4. **Aperçu** de chaque `original → destination`, puis **Copier**. Chaque copie est vérifiée
-   (taille + empreinte) et notée dans `exportpro.log`, dans le dossier de la séance. Les
+   (taille + empreinte) et notée dans `exportx.log`, dans le dossier de la séance. Les
    originaux ne sont pas touchés.
 5. Ensuite, si vous voulez, **Effacer les originaux** (vers la corbeille). **Annuler** les
    remet à partir des copies.
@@ -34,10 +37,10 @@ Plan et décisions : `docs/plan/tauri-prototype.md`, `docs/adr/`.
 Si la destination est sur le même disque que les fichiers, l'aperçu propose **Déplacer**
 (instantané, sans place en plus) ou **Copier** (les copies prennent autant de place que les
 originaux). Un déplacement s'annule d'un clic ou avec Ctrl+Z ; dans un terminal, `apply --move` affiche la
-commande qui l'annule (`exportpro undo --run <id> <dossier de la séance>`).
+commande qui l'annule (`exportx undo --run <id> <dossier de la séance>`).
 
 Le bouton **i** liste les formats (vidéos, dates lues) ; **⚙** règle la langue et la recherche
-de nouvelle version au démarrage. `exportpro --help` donne les mêmes listes.
+de nouvelle version au démarrage. `exportx --help` donne les mêmes listes.
 
 Arborescences (`--preset`) :
 - `classique` (par défaut) : `AAAA/MM/JJ/<séance>/p|v/o/<ext>/`
@@ -46,28 +49,28 @@ Arborescences (`--preset`) :
 Les mêmes fonctions dans un terminal :
 
 ```
-exportpro plan|apply --source <carte> --dest <photos> --shoot <nom> [--prefix p]
+exportx plan|apply --source <carte> --dest <photos> --shoot <nom> [--prefix p]
                      [--date AAAA-MM-JJ | --split | --no-date] [--preset classique|lisible]
                      [--move]
-exportpro erase|undo <dossier de la séance>
-exportpro undo --run <id> <dossier de la séance>
+exportx erase|undo <dossier de la séance>
+exportx undo --run <id> <dossier de la séance>
 ```
 
 ## Récupérer une version construite
 
 Les versions construites restent sur l'exécution GitHub, dans *Artifacts*.
 
-- **Linux** : Actions → *build* → la dernière exécution sur `main` → `exportpro-linux`.
+- **Linux** : Actions → *build* → la dernière exécution sur `main` → `exportx-linux`.
 - **macOS (Apple Silicon)** : ne se lance jamais tout seul. Chaque construction utilise
   environ 30 des minutes GitHub incluses dans le compte.
   - La lancer : Actions → *build* → *Run workflow* → cocher **macos** → *Run workflow*.
     Ou dans un terminal : `gh workflow run build.yml -f macos=true`.
-  - La télécharger : l'artifact `exportpro-macos-arm64` de l'exécution, ou
-    `gh run download <run-id> -n exportpro-macos-arm64`.
-  - L'installer : ouvrez le `.dmg` et glissez ExportPro dans *Applications*. L'application
+  - La télécharger : l'artifact `exportx-macos-arm64` de l'exécution, ou
+    `gh run download <run-id> -n exportx-macos-arm64`.
+  - L'installer : ouvrez le `.dmg` et glissez ExportX dans *Applications*. L'application
     n'est pas signée, donc macOS la bloque la première fois. Ouvrez-la une fois, allez dans
     *Réglages Système > Confidentialité et sécurité*, puis cliquez sur *Ouvrir quand même*.
-    Ou lancez `xattr -dr com.apple.quarantine /Applications/ExportPro.app`.
+    Ou lancez `xattr -dr com.apple.quarantine /Applications/ExportX.app`.
 
 ## Développement
 

@@ -185,7 +185,7 @@ function infoPanel() {
     "section",
     { class: "panel", id: "info-panel" },
     el("h2", {}, t(lang, "info_title")),
-    el("p", {}, `ExportPro ${info.version}`),
+    el("p", {}, `ExportX ${info.version}`),
     el("h3", {}, t(lang, "info_videos")),
     el("p", { class: "exts" }, info.video_exts.join(", ")),
     el("p", {}, t(lang, "info_photos")),
@@ -221,7 +221,7 @@ function optionsPanel() {
     language,
     el("label", { class: "check", for: "check-updates" }, updates, t(lang, "options_updates")),
     el("small", {}, t(lang, "options_updates_help")),
-    el("p", {}, `ExportPro ${info.version}`),
+    el("p", {}, `ExportX ${info.version}`),
     el("div", { class: "actions" }, closeButton()),
   );
 }

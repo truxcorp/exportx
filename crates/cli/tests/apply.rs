@@ -17,7 +17,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 fn log_lines(shoot: &Path) -> Vec<Value> {
-    fs::read_to_string(shoot.join("exportpro.log"))
+    fs::read_to_string(shoot.join("exportx.log"))
         .unwrap()
         .lines()
         .map(|l| serde_json::from_str(l).unwrap_or_else(|e| panic!("{e}: {l}")))
@@ -178,6 +178,26 @@ fn a_copy_that_cannot_be_logged_counts_as_failed_once() {
         fs::Permissions::from_mode(0o444),
     )
     .unwrap();
+
+    let out = apply(&d, &["--shoot", "s"]);
+
+    assert_eq!(out.status.code(), Some(1));
+    assert!(
+        stderr(&out).contains("0 file(s) copied, 1 failed"),
+        "stderr: {}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn a_copy_whose_exportx_log_cannot_be_written_counts_as_failed_once() {
+    use std::os::unix::fs::PermissionsExt;
+    let d = Dirs::new();
+    mk(&d.src, "2024-03-05 09:00", &["a.jpg"]);
+    let shoot = d.dest.join("2024/03/05/s");
+    fs::create_dir_all(&shoot).unwrap();
+    fs::write(shoot.join("exportx.log"), "").unwrap();
+    fs::set_permissions(shoot.join("exportx.log"), fs::Permissions::from_mode(0o444)).unwrap();
 
     let out = apply(&d, &["--shoot", "s"]);
 

@@ -31,7 +31,7 @@ fn a_second_copy_into_a_shoot_being_copied_is_refused() {
     let shoot = d.dest.join("2024/03/05/s");
     fs::create_dir_all(&shoot).unwrap();
     // Another copy holds the shoot's lock.
-    let lock = fs::File::create(shoot.join(".exportpro.lock")).unwrap();
+    let lock = fs::File::create(shoot.join(".exportx.lock")).unwrap();
     lock.try_lock().unwrap();
 
     let out = exportpro_with(
@@ -87,7 +87,7 @@ fn a_copy_killed_midway_leaves_no_file_under_its_final_name() {
         "--date",
         "2024-03-05",
     ];
-    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_exportpro"))
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_exportx"))
         .args(args)
         .env("XDG_CONFIG_HOME", d.home.join(".config"))
         .spawn()
@@ -255,7 +255,7 @@ fn a_shoot_log_that_cannot_be_read_refuses_the_plan() {
     let d = Dirs::new();
     mk(&d.src, "2024-03-05 09:00", &["a.jpg"]);
     assert_ok(&apply(&d, &["--shoot", "s"]));
-    let log = d.dest.join("2024/03/05/s/exportpro.log");
+    let log = d.dest.join("2024/03/05/s/exportx.log");
     fs::set_permissions(&log, fs::Permissions::from_mode(0o000)).unwrap();
 
     let out = exportpro_with(
@@ -265,7 +265,7 @@ fn a_shoot_log_that_cannot_be_read_refuses_the_plan() {
 
     fs::set_permissions(&log, fs::Permissions::from_mode(0o644)).unwrap();
     assert_eq!(out.status.code(), Some(1), "stdout: {}", stdout(&out));
-    assert!(stderr(&out).contains("exportpro.log"), "{}", stderr(&out));
+    assert!(stderr(&out).contains("exportx.log"), "{}", stderr(&out));
 }
 
 #[test]
@@ -290,7 +290,7 @@ fn no_lock_file_is_left_after_a_copy() {
 
     assert_ok(&apply(&d, &["--shoot", "s"]));
 
-    assert!(!d.dest.join("2024/03/05/s/.exportpro.lock").exists());
+    assert!(!d.dest.join("2024/03/05/s/.exportx.lock").exists());
 }
 
 #[test]

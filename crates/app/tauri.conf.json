@@ -1,14 +1,14 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "ExportPro",
-  "identifier": "com.truxcorp.exportpro",
+  "productName": "ExportX",
+  "identifier": "com.truxcorp.exportx",
   "build": {
     "frontendDist": "../../ui"
   },
   "app": {
     "windows": [
       {
-        "title": "ExportPro",
+        "title": "ExportX",
         "width": 820,
         "height": 640,
         "minWidth": 640,

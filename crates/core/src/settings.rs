@@ -19,10 +19,28 @@ pub struct Settings {
     pub check_updates: Option<bool>,
 }
 
-/// `<config folder>/settings.toml`, e.g. `~/.config/exportpro/settings.toml` on Linux.
+/// `<config folder>/settings.toml`, e.g. `~/.config/exportx/settings.toml` on Linux. The
+/// first time, the settings ExportPro saved (`~/.config/exportpro/`) are copied there.
 pub fn path() -> Option<PathBuf> {
-    directories::ProjectDirs::from("", "", "ExportPro")
-        .map(|d| d.config_dir().join("settings.toml"))
+    let at = |name| {
+        directories::ProjectDirs::from("", "", name).map(|d| d.config_dir().join("settings.toml"))
+    };
+    let path = at("ExportX")?;
+    // Once: an ExportX folder means ExportX ran here (settings deleted since = a reset).
+    if let Some(old) = at("ExportPro")
+        && let Some(folder) = path.parent()
+        && !folder.exists()
+        && old.is_file()
+    {
+        // Copied under another name, then renamed: never a half-written settings file.
+        // Not copied: the defaults then, as with no settings at all.
+        let part = folder.join(format!(".settings.toml.{}", std::process::id()));
+        let _ = fs::create_dir_all(folder)
+            .and_then(|()| fs::copy(&old, &part))
+            .and_then(|_| fs::rename(&part, &path));
+        let _ = fs::remove_file(&part);
+    }
+    Some(path)
 }
 
 impl Settings {

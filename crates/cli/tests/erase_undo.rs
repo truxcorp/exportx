@@ -193,7 +193,7 @@ fn an_erase_that_cannot_be_logged_trashes_nothing() {
     use std::os::unix::fs::PermissionsExt;
     let d = Dirs::new();
     let shoot = copied(&d);
-    let log = shoot.join("exportpro.log");
+    let log = shoot.join("exportx.log");
     fs::set_permissions(&log, fs::Permissions::from_mode(0o444)).unwrap();
 
     let out = erase(&d, &shoot);
@@ -209,7 +209,7 @@ fn an_erase_that_cannot_be_logged_trashes_nothing() {
 fn a_torn_log_line_does_not_block_the_rest() {
     let d = Dirs::new();
     let shoot = copied(&d);
-    let log = shoot.join("exportpro.log");
+    let log = shoot.join("exportx.log");
     let mut text = fs::read_to_string(&log).unwrap();
     text.push_str("{\"v\":1,\"event\":\"cop");
     fs::write(&log, text).unwrap();
@@ -227,7 +227,7 @@ fn a_torn_log_line_does_not_block_the_rest() {
 fn a_log_line_from_a_newer_version_is_skipped() {
     let d = Dirs::new();
     let shoot = copied(&d);
-    let log = shoot.join("exportpro.log");
+    let log = shoot.join("exportx.log");
     let text = fs::read_to_string(&log)
         .unwrap()
         .replacen("\"v\":1", "\"v\":2", 1);

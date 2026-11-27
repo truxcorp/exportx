@@ -30,7 +30,7 @@ fn apply_shows_the_progress_line_on_a_terminal_and_not_in_a_pipe() {
     // `script` runs the command on a pseudo-terminal and prints what it shows.
     // Each word quoted for the shell `script` hands the line to.
     let quote = |w: &str| format!("'{}'", w.replace('\'', r"'\''"));
-    let words = std::iter::once(env!("CARGO_BIN_EXE_exportpro")).chain(args);
+    let words = std::iter::once(env!("CARGO_BIN_EXE_exportx")).chain(args);
     let line = words.map(quote).collect::<Vec<_>>().join(" ");
     let config = tempfile::tempdir().unwrap();
     std::fs::remove_dir_all(&d.dest).unwrap();

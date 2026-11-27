@@ -248,12 +248,12 @@ fn erase_folders_named_like_plan_options_do_not_hide_lang() {
 
     assert_eq!(out.status.code(), Some(1));
     assert!(
-        stderr(&out).contains("--dest/exportpro.log"),
+        stderr(&out).contains("--dest/exportx.log"),
         "stderr: {}",
         stderr(&out)
     );
     assert!(
-        !stderr(&out).contains("fr/exportpro.log"),
+        !stderr(&out).contains("fr/exportx.log"),
         "stderr: {}",
         stderr(&out)
     );

@@ -19,7 +19,7 @@ pub struct Outcome {
     pub moved: Vec<Entry>,
     /// The entry and why its copy failed.
     pub failed: Vec<(Entry, CopyFailure)>,
-    /// Every `exportpro.log` written, absolute.
+    /// Every shoot log written, absolute.
     pub logs: Vec<PathBuf>,
     /// This copy or move's id in the logs: `erase::undo_move` takes it.
     pub run: String,
@@ -55,7 +55,7 @@ pub enum Mode {
 }
 
 /// Copy every entry of `plan` into `req.dest`, logging each one in its shoot folder's
-/// `exportpro.log`, then create the empty folders for edited files. Originals are never
+/// log (`log::path_in`), then create the empty folders for edited files. Originals are never
 /// touched; a failed copy is removed, reported and logged, and the others go on.
 pub fn apply(plan: &Plan, req: &Request) -> Outcome {
     apply_with_progress(plan, req, |_| {})
@@ -120,7 +120,7 @@ fn is_same_file(file: &File, path: &Path) -> bool {
     }
 }
 
-/// Lock every shoot folder of `plan` (`.exportpro.lock`, made if needed) for the length
+/// Lock every shoot folder of `plan` (`.exportx.lock`, made if needed) for the length
 /// of a copy, so two copies never number files in the same shoot at once. Refused with
 /// the folder already locked by another copy.
 pub fn lock_shoots(plan: &Plan, req: &Request) -> Result<ShootLocks, crate::plan::PlanError> {
@@ -167,7 +167,14 @@ fn add_locks(
         }
         fs::create_dir_all(&folder).map_err(|err| cannot(&err))?;
         locks.created.extend(missing.into_iter().rev());
-        let path = folder.join(".exportpro.lock");
+        // ExportPro (perhaps still installed) locks its own file: a copy it is making
+        // into this shoot right now makes ours wait too.
+        if let Ok(theirs) = File::open(folder.join(".exportpro.lock"))
+            && let Err(fs::TryLockError::WouldBlock) = try_lock(&theirs)
+        {
+            return Err(PlanError::Busy(folder));
+        }
+        let path = folder.join(".exportx.lock");
         // Locking the file we opened proves nothing if another copy deleted and replaced
         // it meanwhile: check the path still names it, else try again with the new one.
         let mut attempts = 0;
@@ -340,7 +347,7 @@ fn apply_measured(
             file_done(&mut done, &mut report, i);
             continue;
         }
-        let log = req.dest.join(&e.shoot).join(crate::log::LOG_NAME);
+        let log = crate::log::path_in(&req.dest.join(&e.shoot));
         let dest = req.dest.join(&e.dest);
         // A symbolic link is copied: moving it would move the link, not the photo.
         let is_link = fs::symlink_metadata(&e.source).is_ok_and(|m| m.is_symlink());

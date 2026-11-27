@@ -6,19 +6,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
-const APP = process.env.EXPORTPRO_APP || "target/debug/exportpro-app";
-const SHOTS = process.env.EXPORTPRO_SHOTS || join(process.env.CARGO_TARGET_DIR || "target", "e2e-screenshots");
+const APP = process.env.EXPORTX_APP || "target/debug/exportx-app";
+const SHOTS = process.env.EXPORTX_SHOTS || join(process.env.CARGO_TARGET_DIR || "target", "e2e-screenshots");
 const ELEMENT = "element-6066-11e4-a52e-4f735466cecf";
 let nextPort = 4444;
 let nextDisplay = 90;
 
 /** Start the app for one test. `lang`: the system language ("fr_FR.UTF-8"…). */
 export async function launch({ lang = "fr_FR.UTF-8", settings = null, configDir = null } = {}) {
-  const home = mkdtempSync(join(tmpdir(), "exportpro-e2e-"));
+  const home = mkdtempSync(join(tmpdir(), "exportx-e2e-"));
   const config = configDir ?? join(home, ".config");
   if (settings) {
-    mkdirSync(join(config, "exportpro"), { recursive: true });
-    writeFileSync(join(config, "exportpro", "settings.toml"), settings);
+    mkdirSync(join(config, "exportx"), { recursive: true });
+    writeFileSync(join(config, "exportx", "settings.toml"), settings);
   }
   const display = `:${nextDisplay++}`;
   const port = nextPort++;

@@ -2,7 +2,7 @@
 // (refusals, errors) arrive already translated.
 
 export const STRINGS = {
-  title: { fr: "ExportPro", en: "ExportPro" },
+  title: { fr: "ExportX", en: "ExportX" },
   lang_switch: { fr: "English", en: "Français" },
   close: { fr: "Fermer", en: "Close" },
   info_title: { fr: "Informations", en: "Information" },
@@ -18,8 +18,8 @@ export const STRINGS = {
   },
   info_log: { fr: "Journal et annulation", en: "Log and undo" },
   info_log_text: {
-    fr: "Chaque copie ou déplacement est noté dans exportpro.log, dans le dossier de la séance. Effacer les originaux les met à la corbeille, et Annuler les remet. Un déplacement s'annule d'un clic ou avec Ctrl+Z.",
-    en: "Each copy or move is written to exportpro.log in the shoot folder. Erasing the originals puts them in the Trash, and Undo brings them back. A move is undone with one click or Ctrl+Z.",
+    fr: "Chaque copie ou déplacement est noté dans exportx.log, dans le dossier de la séance (exportpro.log dans les séances plus anciennes). Effacer les originaux les met à la corbeille, et Annuler les remet. Un déplacement s'annule d'un clic ou avec Ctrl+Z.",
+    en: "Each copy or move is written to exportx.log in the shoot folder (exportpro.log in older shoots). Erasing the originals puts them in the Trash, and Undo brings them back. A move is undone with one click or Ctrl+Z.",
   },
   options_title: { fr: "Options", en: "Options" },
   options_language: { fr: "Langue", en: "Language" },

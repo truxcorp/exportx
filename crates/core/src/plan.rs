@@ -301,12 +301,15 @@ fn notes_on(f: &crate::scan::SourceFile) -> Vec<Note> {
 /// The verified copies a shoot folder's log records whose file is still there (none
 /// without a log; a log that can't be read is an error, not "nothing copied").
 fn copies_in(shoot: &Path) -> Result<Vec<LogLine>, PlanError> {
-    let path = shoot.join(log::LOG_NAME);
-    let lines = match log::read(&path) {
-        Ok((lines, _)) => lines,
-        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(err) => return Err(cannot_read(&path, &err)),
-    };
+    // Both logs when ExportPro and ExportX each wrote one there.
+    let mut lines = Vec::new();
+    for path in [shoot.join(log::OLD_LOG_NAME), shoot.join(log::LOG_NAME)] {
+        match log::read(&path) {
+            Ok((l, _)) => lines.extend(l),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {}
+            Err(err) => return Err(cannot_read(&path, &err)),
+        }
+    }
     Ok(lines
         .into_iter()
         .filter(|l| matches!(l.event, Event::Copied | Event::Erased | Event::Restored))
@@ -501,7 +504,7 @@ fn rename_works(from: &Path, to: &Path) -> bool {
     // Unique per call: two plans at once (app threads) never share a test file.
     static COUNT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
     let n = COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let name = format!(".exportpro-move-test-{}-{n}", std::process::id());
+    let name = format!(".exportx-move-test-{}-{n}", std::process::id());
     let (probe, target) = (from.join(&name), to.join(&name));
     if fs::symlink_metadata(&target).is_ok() {
         return false;
@@ -529,7 +532,7 @@ fn rename_works(from: &Path, to: &Path) -> bool {
 /// Write and remove a small file in `folder`, where the shoot's folders will be made:
 /// a read-only disk or a missing permission is caught before any copy.
 fn check_writable(folder: &Path) -> Result<(), PlanError> {
-    let probe = folder.join(format!(".exportpro-write-test-{}", std::process::id()));
+    let probe = folder.join(format!(".exportx-write-test-{}", std::process::id()));
     let written = fs::OpenOptions::new()
         .write(true)
         .create_new(true)
