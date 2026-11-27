@@ -87,7 +87,7 @@ fn a_copy_killed_midway_leaves_no_file_under_its_final_name() {
         "--date",
         "2024-03-05",
     ];
-    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_exportpro"))
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_exportx"))
         .args(args)
         .env("XDG_CONFIG_HOME", d.home.join(".config"))
         .spawn()

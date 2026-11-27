@@ -31,7 +31,7 @@ fn apply_move_moves_on_the_same_disk_and_undo_puts_the_files_back() {
     // The command printed to put them back names this move (--run) and its shoot folder.
     let printed = text
         .lines()
-        .find_map(|l| l.strip_prefix("2 file(s) moved; to put them back: exportpro "))
+        .find_map(|l| l.strip_prefix("2 file(s) moved; to put them back: exportx "))
         .unwrap_or_else(|| panic!("{text}"));
     let words: Vec<&str> = printed.split(' ').collect();
     assert_eq!(words.len(), 4, "{printed}");
@@ -107,7 +107,7 @@ fn a_partly_failed_move_says_what_moved_and_quotes_the_undo_command() {
     assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
     let shoot = dest.join("2024/03/05/s");
     assert!(
-        stdout(&out).contains("exportpro undo --run "),
+        stdout(&out).contains("exportx undo --run "),
         "{}",
         stdout(&out)
     );

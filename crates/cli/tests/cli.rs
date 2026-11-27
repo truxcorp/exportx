@@ -48,3 +48,13 @@ fn help_lists_the_video_formats_and_the_dated_ones() {
         "{text}"
     );
 }
+
+#[test]
+fn the_command_is_called_exportx_in_its_messages() {
+    let out = exportpro(&["paln"]);
+
+    let err = stderr(&out);
+    assert!(err.starts_with("exportx: "), "{err}");
+    assert!(err.contains("usage: exportx plan|apply"), "{err}");
+    assert!(!err.contains("exportpro"), "{err}");
+}
