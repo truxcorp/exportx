@@ -32,7 +32,7 @@ tdd:
   enabled: true                # false: tests are still required, but may be written after the code
   # Paths that need no tests (plumbing, docs, dependency files): verify-tdd.sh warns when
   # a ci/build/chore commit touches anything else. Edit for your stack; empty: no warning.
-  exempt: '^(\.github|\.githooks|infra|deploy|scripts|docs|secrets)/|^\.[^/]+$|\.md$|(^|/)(Makefile[^/]*|[^/]*\.mk|Dockerfile|Containerfile|package\.json|go\.(mod|sum)|[^/]*\.lock|[^/]*-lock\.(json|yaml)|Cargo\.toml|rust-toolchain\.toml|build\.rs|tauri\.conf\.json)$|^crates/app/(capabilities|icons)/'
+  exempt: '^(\.github|\.githooks|infra|deploy|scripts|docs|secrets)/|^\.[^/]+$|\.md$|(^|/)(Makefile[^/]*|[^/]*\.mk|Dockerfile|Containerfile|package\.json|go\.(mod|sum)|[^/]*\.lock|[^/]*-lock\.(json|yaml)|Cargo\.toml|rust-toolchain\.toml|build\.rs|tauri\.conf\.json|tauri\.release\.conf\.json)$|^crates/app/(capabilities|icons)/|^assets/brand/'
 
 tests:
   regex: '(^|/)(tests?|__tests__|e2e|spec)/|\.(test|spec)\.[[:alnum:]]+$|_test\.[[:alnum:]]+$'   # what counts as a test file
