@@ -19,7 +19,11 @@ semver='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$'
 tag="v$version"
 
 # The workspace version (Cargo.toml [workspace.package]), which the app and the CLI take.
+# Put back as they were when the script ends, so a local build leaves the checkout clean.
 stamp() {
+  saved=$(mktemp -d)
+  cp Cargo.toml Cargo.lock "$saved/"
+  trap 'cp "$saved/Cargo.toml" "$saved/Cargo.lock" . && rm -r "$saved"' EXIT
   awk -v v="$version" '
     /^\[/ { section = $0 }
     section == "[workspace.package]" && /^version = / { print "version = \"" v "\""; next }
@@ -31,6 +35,12 @@ stamp() {
 take() {
   [ -f "$1" ] || die "missing build output: $1"
   cp "$1" "dist/${2:-$(basename "$1")}"
+}
+
+# Dependencies installed without their install scripts, and without the key in reach.
+npm_ci() {
+  env -u TAURI_SIGNING_PRIVATE_KEY -u TAURI_SIGNING_PRIVATE_KEY_PASSWORD \
+    npm ci --no-audit --no-fund --ignore-scripts
 }
 
 need_key() {
@@ -48,7 +58,8 @@ case "$cmd" in
     [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || die "main isn't origin/main: pull first"
     ! git rev-parse -q --verify "refs/tags/$tag" >/dev/null || die "$tag already exists"
     git tag -a "$tag" -m "ExportX $version"
-    git push origin "$tag"
+    # Not pushed: no tag left behind to block the next try.
+    git push origin "$tag" || { git tag -d "$tag" >/dev/null; die "could not push $tag"; }
     echo "release: pushed $tag; the release workflow builds and publishes it"
     ;;
   check)
@@ -57,19 +68,20 @@ case "$cmd" in
     ;;
   build-linux)
     need_key; stamp
-    npm ci --no-audit --no-fund
+    npm_ci
     APPIMAGE_EXTRACT_AND_RUN=1 NO_STRIP=true npx tauri build --ci --bundles appimage,deb \
       --config crates/app/tauri.release.conf.json
     out="${CARGO_TARGET_DIR:-target}/release/bundle"
     rm -rf dist && mkdir dist
     take "$out/appimage/ExportX_${version}_amd64.AppImage"
     take "$out/appimage/ExportX_${version}_amd64.AppImage.sig"
-    take "$out/deb/ExportX_${version}_amd64.deb"
+    # Not for pre-releases: dpkg would rank 1.2.3-rc.1 above 1.2.3 (a revision, to Debian).
+    [[ "$version" == *-* ]] || take "$out/deb/ExportX_${version}_amd64.deb"
     ls -l dist
     ;;
   build-macos)
     need_key; stamp
-    npm ci --no-audit --no-fund
+    npm_ci
     npx tauri build --ci --bundles app,dmg --config crates/app/tauri.release.conf.json
     out="${CARGO_TARGET_DIR:-target}/release/bundle"
     rm -rf dist && mkdir dist
@@ -94,9 +106,25 @@ case "$cmd" in
       '{version: $v, notes: $n, pub_date: $d, platforms: add}' >"$dir/latest.json"
     echo "release: wrote $dir/latest.json"
     if [ "$cmd" = publish ]; then
-      prerelease=(); [[ "$version" == *-* ]] && prerelease=(--prerelease)
-      gh release create "$tag" --repo "$repo" --verify-tag --title "ExportX $version" \
-        --generate-notes "${prerelease[@]}" "$dir"/*
+      # The updater reads releases/latest: a pre-release, or an older version published
+      # after a newer one, never becomes "latest".
+      flags=()
+      if [[ "$version" == *-* ]]; then
+        flags=(--prerelease)
+      else
+        latest=$(gh release view --repo "$repo" --json tagName --jq .tagName 2>/dev/null || true)
+        latest=${latest#v}
+        if [ -n "$latest" ] && [ "$(printf '%s\n%s\n' "$latest" "$version" | sort -V | tail -1)" != "$version" ]; then
+          flags=(--latest=false)
+        fi
+      fi
+      if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
+        # A re-run after a failed upload: the release is there, send the files again.
+        gh release upload "$tag" --repo "$repo" --clobber "$dir"/*
+      else
+        gh release create "$tag" --repo "$repo" --verify-tag --title "ExportX $version" \
+          --generate-notes "${flags[@]}" "$dir"/*
+      fi
     fi
     ;;
   *) die "unknown command '$cmd' (tag, check, build-linux, build-macos, manifest, publish)" ;;

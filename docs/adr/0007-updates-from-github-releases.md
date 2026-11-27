@@ -18,6 +18,13 @@ environment, usable from `v*` tags only. `latest.json` lists the AppImage
 (`linux-x86_64-appimage`) and the Mac app (`darwin-aarch64-app`): the updater can't
 replace a `.deb`, whose users get a notice instead (slice 5).
 ## Consequences
+The "tag is on main" check catches mistakes, not attacks: the workflow and script run from
+the tagged commit, so whoever can push a `v*` tag can reach the key. The key's real guard
+sits in GitHub's settings: a tag ruleset (only admins create `v*`) and/or a required
+reviewer on the `release` environment. Install scripts never run with the key in reach
+(`npm ci --ignore-scripts`, key unset). Pre-releases ship no `.deb` (dpkg would rank
+`1.2.3-rc.1` above `1.2.3`) and never become the "latest" release the updater reads; nor
+does an older version published after a newer one.
 Losing the update key means installed copies can't update any more: the human keeps a
 backup. Mac updates of an unsigned app need checking on a Mac. Windows and Intel Macs
 come later (new `latest.json` entries).
