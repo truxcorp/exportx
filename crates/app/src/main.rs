@@ -129,5 +129,5 @@ fn main() {
             check_folder
         ])
         .run(tauri::generate_context!())
-        .expect("error while running ExportPro");
+        .expect("error while running ExportX");
 }
