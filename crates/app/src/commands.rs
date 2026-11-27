@@ -452,9 +452,16 @@ pub enum UpdateOffer {
 
 /// Whether a newer release than `current` is described at `url`, and what to offer for it.
 pub fn check_update(
-    _url: &str,
-    _current: &str,
-    _bundle: Bundle,
+    url: &str,
+    current: &str,
+    bundle: Bundle,
 ) -> Result<Option<UpdateOffer>, String> {
-    Ok(None)
+    use exportpro_core::update;
+    Ok(update::check(url, current)?.map(|version| match bundle {
+        Bundle::AppImage | Bundle::MacApp => UpdateOffer::Install { version },
+        Bundle::Other => UpdateOffer::Link {
+            page: update::release_page(&version),
+            version,
+        },
+    }))
 }
