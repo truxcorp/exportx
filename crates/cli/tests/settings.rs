@@ -149,3 +149,19 @@ fn settings_live_in_the_exportx_folder_and_exportpro_ones_are_picked_up() {
     let saved = std::fs::read_to_string(config.join("exportx/settings.toml")).unwrap();
     assert!(saved.contains("prefix = \"md\""), "{saved}");
 }
+
+#[test]
+fn exportpro_settings_are_taken_once_not_after_a_reset() {
+    let d = Dirs::new();
+    mk(&d.src, "2024-03-05 09:00", &["a.jpg"]);
+    let config = d.home.join(".config");
+    std::fs::create_dir_all(config.join("exportpro")).unwrap();
+    std::fs::write(config.join("exportpro/settings.toml"), "prefix = \"md\"\n").unwrap();
+    // ExportX ran before and its settings were deleted to reset them.
+    std::fs::create_dir_all(config.join("exportx")).unwrap();
+
+    let out = run(&d, &command_args("plan", &d, &["--shoot", "s"]));
+
+    assert_ok(&out);
+    assert!(stdout(&out).contains("txo_0001.jpg"), "{}", stdout(&out));
+}
