@@ -613,6 +613,13 @@ impl Lang {
         }
     }
 
+    pub fn update_install_failed(self, why: &str) -> String {
+        match self {
+            Lang::En => format!("the update failed: {why}"),
+            Lang::Fr => format!("la mise à jour a échoué : {why}"),
+        }
+    }
+
     pub fn update_check_failed(self, why: &str) -> String {
         match self {
             Lang::En => format!("could not check for a new version: {why}"),

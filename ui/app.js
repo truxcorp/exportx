@@ -56,7 +56,7 @@ async function installUpdate() {
   send({ type: "install" });
   if (!state.updating) return;
   try {
-    await invoke("install_update");
+    await invoke("install_update", { lang });
   } catch (err) {
     send({ type: "installFailed", message: String(err) });
   }

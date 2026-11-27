@@ -132,7 +132,13 @@ async fn check_update(lang: String) -> Result<Option<commands::UpdateOffer>, Str
 
 /// Download the newer release, check it against the update key, install it and restart.
 #[tauri::command]
-async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
+async fn install_update(app: tauri::AppHandle, lang: String) -> Result<(), String> {
+    let failed = |why: String| Lang::parse(&lang).update_install_failed(&why);
+    download_and_install(&app).await.map_err(failed)?;
+    app.restart()
+}
+
+async fn download_and_install(app: &tauri::AppHandle) -> Result<(), String> {
     use tauri_plugin_updater::UpdaterExt;
     let url = exportpro_core::update::endpoint()
         .parse::<tauri::Url>()
@@ -154,8 +160,7 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
     update
         .download_and_install(|_, _| {}, || {})
         .await
-        .map_err(|e| e.to_string())?;
-    app.restart()
+        .map_err(|e| e.to_string())
 }
 
 /// Open the release page of `version` in the browser (installs the updater can't replace).
