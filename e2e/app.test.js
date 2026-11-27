@@ -239,6 +239,10 @@ test("the information panel lists the formats; the options remember the update c
     await app.click("[data-action=info]");
     await app.waitText("Tout autre fichier est copié comme une photo");
     const info = await app.text();
+    assert.match(info, /^ExportX/, "the app's name heads the window");
+    assert.match(info, /ExportX \d+\.\d+\.\d+/);
+    assert.match(info, /exportx\.log/);
+    assert.ok(!info.includes("ExportPro"), "no old name left");
     assert.match(info, /mov, mp4, m4v/);
     assert.match(info, /cr3/);
     await app.screenshot("9-info");
