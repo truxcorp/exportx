@@ -104,6 +104,67 @@ fn check_folder(path: String, source: Option<PathBuf>, lang: String) -> Result<P
     commands::check_folder(&path, source.as_deref(), Lang::parse(&lang))
 }
 
+/// How this copy was installed (ADR 0007). Debug builds take `EXPORTX_BUNDLE=appimage` so
+/// the tests can show the install offer without packaging the app.
+fn bundle() -> commands::Bundle {
+    use tauri::utils::{config::BundleType, platform::bundle_type};
+    if cfg!(debug_assertions) && std::env::var("EXPORTX_BUNDLE").as_deref() == Ok("appimage") {
+        return commands::Bundle::AppImage;
+    }
+    match bundle_type() {
+        Some(BundleType::AppImage) => commands::Bundle::AppImage,
+        Some(BundleType::App) => commands::Bundle::MacApp,
+        _ => commands::Bundle::Other,
+    }
+}
+
+/// Is a newer release out, and what to offer for it (an install, or the release page).
+#[tauri::command]
+async fn check_update(lang: String) -> Result<Option<commands::UpdateOffer>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let url = exportpro_core::update::endpoint();
+        commands::check_update(&url, env!("CARGO_PKG_VERSION"), bundle())
+            .map_err(|why| Lang::parse(&lang).update_check_failed(&why))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Download the newer release, check it against the update key, install it and restart.
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_updater::UpdaterExt;
+    let url = exportpro_core::update::endpoint()
+        .parse::<tauri::Url>()
+        .map_err(|e| e.to_string())?;
+    let update = app
+        .updater_builder()
+        .endpoints(vec![url])
+        .and_then(|b| {
+            b.version_comparator(|current, remote| {
+                exportpro_core::update::newer(&current.to_string(), &remote.version.to_string())
+            })
+            .build()
+        })
+        .map_err(|e| e.to_string())?
+        .check()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "no newer version".to_owned())?;
+    update
+        .download_and_install(|_, _| {}, || {})
+        .await
+        .map_err(|e| e.to_string())?;
+    app.restart()
+}
+
+/// Open the release page of `version` in the browser (installs the updater can't replace).
+#[tauri::command]
+fn open_release(version: String) -> Result<(), String> {
+    let page = exportpro_core::update::release_page(&version);
+    tauri_plugin_opener::open_url(page, None::<&str>).map_err(|e| e.to_string())
+}
+
 /// Show a shoot folder in the file manager.
 #[tauri::command]
 fn open_folder(path: PathBuf) -> Result<(), String> {
@@ -114,6 +175,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             settings,
             lang,
@@ -126,7 +188,10 @@ fn main() {
             info,
             set_check_updates,
             open_folder,
-            check_folder
+            check_folder,
+            check_update,
+            install_update,
+            open_release
         ])
         .run(tauri::generate_context!())
         .expect("error while running ExportX");

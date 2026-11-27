@@ -23,7 +23,8 @@ pub fn release_page(version: &str) -> String {
 }
 
 /// Where the latest release is described (the updater's `latest.json`, ADR 0007).
-pub const ENDPOINT: &str = "https://github.com/truxcorp/exportx/releases/latest/download/latest.json";
+pub const ENDPOINT: &str =
+    "https://github.com/truxcorp/exportx/releases/latest/download/latest.json";
 
 /// The update endpoint: `EXPORTX_UPDATE_URL` when set (tests, a mirror), else [`ENDPOINT`].
 /// An install is still checked against the app's update key, whatever the endpoint.
