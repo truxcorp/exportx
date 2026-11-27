@@ -89,8 +89,9 @@ export function next(s, e) {
       const allowed = e.mode === "move" ? s.movable : s.copyFits;
       return allowed ? { ...s, mode: e.mode } : s;
     }
+    // An update that installs restarts the app: nothing starts that it would cut short.
     case "confirm":
-      return s.step === "preview"
+      return s.step === "preview" && !s.updating
         ? {
             ...s,
             step: "copying",
@@ -118,7 +119,7 @@ export function next(s, e) {
       };
     }
     case "erase":
-      if (s.step !== "result") return s;
+      if (s.step !== "result" || s.updating) return s;
       if (!e.yes || !s.canErase) return { ...s, step: "done" };
       return { ...s, step: "erasing" };
     case "erased":
@@ -126,7 +127,9 @@ export function next(s, e) {
         ? { ...s, eraseOutcome: e.outcome, step: "erased", canUndo: e.outcome.done > 0 }
         : s;
     case "undo":
-      return (s.step === "erased" || s.step === "result") && s.canUndo ? { ...s, step: "undoing" } : s;
+      return (s.step === "erased" || s.step === "result") && s.canUndo && !s.updating
+        ? { ...s, step: "undoing" }
+        : s;
     case "undone":
       return s.step === "undoing" ? { ...s, eraseOutcome: e.outcome, step: "done" } : s;
     case "panel":
@@ -149,7 +152,6 @@ export function next(s, e) {
       return {
         ...start({ dest: s.dest, prefix: s.prefix, preset: s.preset, check_updates: s.checkUpdates }),
         update: s.update,
-        updateMessage: s.updateMessage,
         updating: s.updating,
       };
     default:

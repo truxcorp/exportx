@@ -142,6 +142,12 @@ function el(tag, attrs = {}, ...children) {
 const button = (key, onclick, primary = false, vars = {}, action = key) =>
   el("button", { class: primary ? "primary" : "", "data-action": action, onclick }, t(lang, key, vars));
 
+/** `b`, disabled while an update installs (the restart would cut its command short). */
+function whenIdle(b) {
+  b.disabled = state.updating;
+  return b;
+}
+
 /** Run a Tauri command whose failure the user should see. */
 async function tryInvoke(cmd, args) {
   try {
@@ -525,7 +531,7 @@ function preview() {
       "div",
       { class: "actions" },
       button("back", () => send({ type: "back" })),
-      button(moving ? "move" : "copy", () => send({ type: "confirm" }), true, {}, "copy"),
+      whenIdle(button(moving ? "move" : "copy", () => send({ type: "confirm" }), true, {}, "copy")),
     ),
   );
 }
@@ -564,7 +570,7 @@ function result() {
       ? el(
           "div",
           { class: "actions" },
-          button("undo_move", () => send({ type: "undo" }), false, {}, "undo"),
+          whenIdle(button("undo_move", () => send({ type: "undo" }), false, {}, "undo")),
           button("restart", () => send({ type: "restart" }), true),
           el("small", { class: "hint" }, t(lang, "undo_hint", { keys: undoKeys() })),
         )
@@ -573,8 +579,8 @@ function result() {
           "div",
           { class: "question" },
           el("p", {}, t(lang, "erase_question")),
-          button("erase_no", () => send({ type: "erase", yes: false }), false, {}, "erase-no"),
-          button("erase_yes", () => send({ type: "erase", yes: true }), true, {}, "erase-yes"),
+          whenIdle(button("erase_no", () => send({ type: "erase", yes: false }), false, {}, "erase-no")),
+          whenIdle(button("erase_yes", () => send({ type: "erase", yes: true }), true, {}, "erase-yes")),
         )
       : el("div", { class: "actions" }, button("restart", () => send({ type: "restart" }), true)),
   );
@@ -591,7 +597,7 @@ function erased() {
     el(
       "div",
       { class: "actions" },
-      state.canUndo ? button("undo", () => send({ type: "undo" })) : "",
+      state.canUndo ? whenIdle(button("undo", () => send({ type: "undo" }))) : "",
       button("restart", () => send({ type: "restart" }), true),
     ),
   );
