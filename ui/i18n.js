@@ -18,8 +18,8 @@ export const STRINGS = {
   },
   info_log: { fr: "Journal et annulation", en: "Log and undo" },
   info_log_text: {
-    fr: "Chaque copie ou déplacement est noté dans exportx.log, dans le dossier de la séance. Effacer les originaux les met à la corbeille, et Annuler les remet. Un déplacement s'annule d'un clic ou avec Ctrl+Z.",
-    en: "Each copy or move is written to exportx.log in the shoot folder. Erasing the originals puts them in the Trash, and Undo brings them back. A move is undone with one click or Ctrl+Z.",
+    fr: "Chaque copie ou déplacement est noté dans exportx.log, dans le dossier de la séance (exportpro.log pour les séances d'ExportPro). Effacer les originaux les met à la corbeille, et Annuler les remet. Un déplacement s'annule d'un clic ou avec Ctrl+Z.",
+    en: "Each copy or move is written to exportx.log in the shoot folder (exportpro.log in shoots ExportPro copied). Erasing the originals puts them in the Trash, and Undo brings them back. A move is undone with one click or Ctrl+Z.",
   },
   options_title: { fr: "Options", en: "Options" },
   options_language: { fr: "Langue", en: "Language" },

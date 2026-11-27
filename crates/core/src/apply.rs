@@ -167,6 +167,13 @@ fn add_locks(
         }
         fs::create_dir_all(&folder).map_err(|err| cannot(&err))?;
         locks.created.extend(missing.into_iter().rev());
+        // ExportPro (perhaps still installed) locks its own file: a copy it is making
+        // into this shoot right now makes ours wait too.
+        if let Ok(theirs) = File::open(folder.join(".exportpro.lock"))
+            && let Err(fs::TryLockError::WouldBlock) = try_lock(&theirs)
+        {
+            return Err(PlanError::Busy(folder));
+        }
         let path = folder.join(".exportx.lock");
         // Locking the file we opened proves nothing if another copy deleted and replaced
         // it meanwhile: check the path still names it, else try again with the new one.

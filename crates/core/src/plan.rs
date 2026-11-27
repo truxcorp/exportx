@@ -301,12 +301,15 @@ fn notes_on(f: &crate::scan::SourceFile) -> Vec<Note> {
 /// The verified copies a shoot folder's log records whose file is still there (none
 /// without a log; a log that can't be read is an error, not "nothing copied").
 fn copies_in(shoot: &Path) -> Result<Vec<LogLine>, PlanError> {
-    let path = log::path_in(shoot);
-    let lines = match log::read(&path) {
-        Ok((lines, _)) => lines,
-        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(err) => return Err(cannot_read(&path, &err)),
-    };
+    // Both logs when ExportPro and ExportX each wrote one there.
+    let mut lines = Vec::new();
+    for path in [shoot.join(log::OLD_LOG_NAME), shoot.join(log::LOG_NAME)] {
+        match log::read(&path) {
+            Ok((l, _)) => lines.extend(l),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {}
+            Err(err) => return Err(cannot_read(&path, &err)),
+        }
+    }
     Ok(lines
         .into_iter()
         .filter(|l| matches!(l.event, Event::Copied | Event::Erased | Event::Restored))

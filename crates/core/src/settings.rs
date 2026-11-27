@@ -26,13 +26,19 @@ pub fn path() -> Option<PathBuf> {
         directories::ProjectDirs::from("", "", name).map(|d| d.config_dir().join("settings.toml"))
     };
     let path = at("ExportX")?;
+    // Once: an ExportX folder means ExportX ran here (settings deleted since = a reset).
     if let Some(old) = at("ExportPro")
-        && !path.exists()
+        && let Some(folder) = path.parent()
+        && !folder.exists()
         && old.is_file()
-        && let Some(parent) = path.parent()
     {
+        // Copied under another name, then renamed: never a half-written settings file.
         // Not copied: the defaults then, as with no settings at all.
-        let _ = fs::create_dir_all(parent).and_then(|()| fs::copy(&old, &path));
+        let part = folder.join(format!(".settings.toml.{}", std::process::id()));
+        let _ = fs::create_dir_all(folder)
+            .and_then(|()| fs::copy(&old, &part))
+            .and_then(|_| fs::rename(&part, &path));
+        let _ = fs::remove_file(&part);
     }
     Some(path)
 }

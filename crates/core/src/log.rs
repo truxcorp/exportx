@@ -16,15 +16,43 @@ pub const LOG_NAME: &str = "exportx.log";
 /// The log's name before the app was renamed ExportX.
 pub const OLD_LOG_NAME: &str = "exportpro.log";
 
-/// The log of `shoot`: its `exportpro.log` if ExportPro started one there (kept, so a
-/// shoot never has two logs), else `exportx.log`.
+/// The log new lines of `shoot` go to: its `exportx.log` if there is one, else the
+/// `exportpro.log` ExportPro started there (continued), else a new `exportx.log`.
 pub fn path_in(shoot: &Path) -> PathBuf {
-    let old = shoot.join(OLD_LOG_NAME);
-    if fs::symlink_metadata(&old).is_ok() {
+    let (new, old) = (shoot.join(LOG_NAME), shoot.join(OLD_LOG_NAME));
+    let exists = |p: &Path| fs::symlink_metadata(p).is_ok();
+    if !exists(&new) && exists(&old) {
         old
     } else {
-        shoot.join(LOG_NAME)
+        new
     }
+}
+
+/// An unusable line and the log it is in.
+pub type LogIssue = (PathBuf, LineIssue);
+
+/// The lines of every log of `shoot` (ExportPro's `exportpro.log`, then `exportx.log`: both
+/// may exist when ExportPro, still installed, wrote into a shoot ExportX started), and each
+/// unusable line with its log. NotFound when the shoot has no log.
+pub fn read_shoot(shoot: &Path) -> io::Result<(Vec<LogLine>, Vec<LogIssue>)> {
+    let mut lines = Vec::new();
+    let mut problems = Vec::new();
+    let mut found = false;
+    for log in [shoot.join(OLD_LOG_NAME), shoot.join(LOG_NAME)] {
+        match read(&log) {
+            Ok((l, p)) => {
+                found = true;
+                lines.extend(l);
+                problems.extend(p.into_iter().map(|issue| (log.clone(), issue)));
+            }
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e),
+        }
+    }
+    if !found {
+        return Err(io::Error::from(io::ErrorKind::NotFound));
+    }
+    Ok((lines, problems))
 }
 /// Bumped when a line's meaning changes.
 pub const FORMAT_VERSION: u32 = 1;

@@ -79,12 +79,12 @@ pub enum Keep {
 
 impl Outcome {
     /// Start with one `kept` entry per log line that couldn't be used.
-    fn with_problems(log_path: &Path, problems: Vec<(usize, LineProblem)>) -> Self {
+    fn with_problems(problems: Vec<(PathBuf, (usize, LineProblem))>) -> Self {
         Outcome {
             done: Vec::new(),
             kept: problems
                 .into_iter()
-                .map(|(line, problem)| (log_path.to_path_buf(), Keep::LogLine { line, problem }))
+                .map(|(log, (line, problem))| (log, Keep::LogLine { line, problem }))
                 .collect(),
         }
     }
@@ -94,8 +94,8 @@ impl Outcome {
 /// again that the copy and the original both still match the logged hash.
 pub fn erase(shoot: &Path) -> io::Result<Outcome> {
     let log_path = log::path_in(shoot);
-    let (lines, problems) = log::read(&log_path)?;
-    let mut outcome = Outcome::with_problems(&log_path, problems);
+    let (lines, problems) = log::read_shoot(shoot)?;
+    let mut outcome = Outcome::with_problems(problems);
     for line in last_events(&lines) {
         // `erased` with the original still there: an earlier Trash move failed.
         let erasable = matches!(line.event, Event::Copied | Event::Restored | Event::Erased);
@@ -140,8 +140,8 @@ pub fn erase(shoot: &Path) -> io::Result<Outcome> {
 /// once the copy matches the logged hash. Originals already back are left alone.
 pub fn undo(shoot: &Path) -> io::Result<Outcome> {
     let log_path = log::path_in(shoot);
-    let (lines, problems) = log::read(&log_path)?;
-    let mut outcome = Outcome::with_problems(&log_path, problems);
+    let (lines, problems) = log::read_shoot(shoot)?;
+    let mut outcome = Outcome::with_problems(problems);
     for line in last_events(&lines) {
         if line.event != Event::Erased || line.source.exists() {
             continue;
@@ -173,8 +173,8 @@ pub fn undo(shoot: &Path) -> io::Result<Outcome> {
 /// erased originals are left alone.
 pub fn undo_move(shoot: &Path, run: &str) -> io::Result<Outcome> {
     let log_path = log::path_in(shoot);
-    let (lines, problems) = log::read(&log_path)?;
-    let mut outcome = Outcome::with_problems(&log_path, problems);
+    let (lines, problems) = log::read_shoot(shoot)?;
+    let mut outcome = Outcome::with_problems(problems);
     // That run's lines only: a later run may have logged the same original since.
     let of_run: Vec<LogLine> = lines
         .into_iter()
