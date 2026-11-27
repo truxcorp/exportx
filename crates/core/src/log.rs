@@ -1,4 +1,5 @@
-//! `exportpro.log`: one JSON line per file, in each shoot folder. It is the contract erase
+//! `exportx.log` (`exportpro.log` in shoots ExportPro copied): one JSON line per file, in
+//! each shoot folder. It is the contract erase
 //! and undo rely on (ADR 0003), so it records the layout used and never depends on the
 //! current settings.
 
@@ -11,7 +12,20 @@ use serde::{Deserialize, Serialize};
 use crate::layout::Layout;
 use crate::plan::Entry;
 
-pub const LOG_NAME: &str = "exportpro.log";
+pub const LOG_NAME: &str = "exportx.log";
+/// The log's name before the app was renamed ExportX.
+pub const OLD_LOG_NAME: &str = "exportpro.log";
+
+/// The log of `shoot`: its `exportpro.log` if ExportPro started one there (kept, so a
+/// shoot never has two logs), else `exportx.log`.
+pub fn path_in(shoot: &Path) -> PathBuf {
+    let old = shoot.join(OLD_LOG_NAME);
+    if fs::symlink_metadata(&old).is_ok() {
+        old
+    } else {
+        shoot.join(LOG_NAME)
+    }
+}
 /// Bumped when a line's meaning changes.
 pub const FORMAT_VERSION: u32 = 1;
 

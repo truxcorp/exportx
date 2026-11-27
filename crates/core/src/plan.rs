@@ -301,7 +301,7 @@ fn notes_on(f: &crate::scan::SourceFile) -> Vec<Note> {
 /// The verified copies a shoot folder's log records whose file is still there (none
 /// without a log; a log that can't be read is an error, not "nothing copied").
 fn copies_in(shoot: &Path) -> Result<Vec<LogLine>, PlanError> {
-    let path = shoot.join(log::LOG_NAME);
+    let path = log::path_in(shoot);
     let lines = match log::read(&path) {
         Ok((lines, _)) => lines,
         Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),

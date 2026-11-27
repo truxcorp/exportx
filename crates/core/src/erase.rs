@@ -1,5 +1,5 @@
 //! Erasing originals to the system Trash, and undoing that from the copies (ADR 0003).
-//! Both read the shoot folder's `exportpro.log`, never the current settings.
+//! Both read the shoot folder's log (`log::path_in`), never the current settings.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use crate::apply::{copy_verified, hash_file};
 use crate::i18n::IoReason;
-use crate::log::{self, Event, LOG_NAME, LineProblem, LogLine};
+use crate::log::{self, Event, LineProblem, LogLine};
 
 /// What happened to each original.
 #[derive(Debug, Default)]
@@ -93,7 +93,7 @@ impl Outcome {
 /// Move to the Trash every original of `shoot` whose copy was verified, after checking
 /// again that the copy and the original both still match the logged hash.
 pub fn erase(shoot: &Path) -> io::Result<Outcome> {
-    let log_path = shoot.join(LOG_NAME);
+    let log_path = log::path_in(shoot);
     let (lines, problems) = log::read(&log_path)?;
     let mut outcome = Outcome::with_problems(&log_path, problems);
     for line in last_events(&lines) {
@@ -139,7 +139,7 @@ pub fn erase(shoot: &Path) -> io::Result<Outcome> {
 /// Copy every erased original of `shoot` back to its name and folder from its copy,
 /// once the copy matches the logged hash. Originals already back are left alone.
 pub fn undo(shoot: &Path) -> io::Result<Outcome> {
-    let log_path = shoot.join(LOG_NAME);
+    let log_path = log::path_in(shoot);
     let (lines, problems) = log::read(&log_path)?;
     let mut outcome = Outcome::with_problems(&log_path, problems);
     for line in last_events(&lines) {
@@ -172,7 +172,7 @@ pub fn undo(shoot: &Path) -> io::Result<Outcome> {
 /// Move back the files that the move `run` of `shoot` moved (ADR 0006): other moves and
 /// erased originals are left alone.
 pub fn undo_move(shoot: &Path, run: &str) -> io::Result<Outcome> {
-    let log_path = shoot.join(LOG_NAME);
+    let log_path = log::path_in(shoot);
     let (lines, problems) = log::read(&log_path)?;
     let mut outcome = Outcome::with_problems(&log_path, problems);
     // That run's lines only: a later run may have logged the same original since.

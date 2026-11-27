@@ -19,7 +19,7 @@ pub struct Outcome {
     pub moved: Vec<Entry>,
     /// The entry and why its copy failed.
     pub failed: Vec<(Entry, CopyFailure)>,
-    /// Every `exportpro.log` written, absolute.
+    /// Every shoot log written, absolute.
     pub logs: Vec<PathBuf>,
     /// This copy or move's id in the logs: `erase::undo_move` takes it.
     pub run: String,
@@ -55,7 +55,7 @@ pub enum Mode {
 }
 
 /// Copy every entry of `plan` into `req.dest`, logging each one in its shoot folder's
-/// `exportpro.log`, then create the empty folders for edited files. Originals are never
+/// log (`log::path_in`), then create the empty folders for edited files. Originals are never
 /// touched; a failed copy is removed, reported and logged, and the others go on.
 pub fn apply(plan: &Plan, req: &Request) -> Outcome {
     apply_with_progress(plan, req, |_| {})
@@ -340,7 +340,7 @@ fn apply_measured(
             file_done(&mut done, &mut report, i);
             continue;
         }
-        let log = req.dest.join(&e.shoot).join(crate::log::LOG_NAME);
+        let log = crate::log::path_in(&req.dest.join(&e.shoot));
         let dest = req.dest.join(&e.dest);
         // A symbolic link is copied: moving it would move the link, not the photo.
         let is_link = fs::symlink_metadata(&e.source).is_ok_and(|m| m.is_symlink());

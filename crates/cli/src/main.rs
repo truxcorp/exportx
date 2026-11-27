@@ -310,7 +310,10 @@ fn run_log_command(cmd: &str, args: &[String], lang: Lang) -> ExitCode {
                 ok &= outcome.kept.is_empty();
             }
             Err(e) => {
-                eprintln!("exportpro: {}: {e}", folder.join("exportpro.log").display());
+                eprintln!(
+                    "exportpro: {}: {e}",
+                    exportpro_core::log::path_in(&folder).display()
+                );
                 ok = false;
             }
         }
