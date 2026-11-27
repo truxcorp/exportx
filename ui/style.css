@@ -41,3 +41,8 @@ form.paste label { margin: 0; flex-basis: 100%; font-weight: normal; color: var(
 form.paste input { flex: 1 1 320px; max-width: 480px; font-family: ui-monospace, monospace; }
 table.preview td.note { color: var(--error); white-space: normal; font-family: system-ui, sans-serif; }
 .progress-line { font-variant-numeric: tabular-nums; opacity: 0.75; margin-top: 0.4em; }
+fieldset.mode { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin: 8px 0; display: grid; gap: 6px; }
+fieldset.mode legend { padding: 0 4px; color: var(--muted); }
+label.option { font-weight: normal; margin: 0; display: flex; gap: 8px; align-items: baseline; cursor: pointer; }
+label.option.disabled { opacity: 0.55; cursor: default; }
+.hint { align-self: center; }

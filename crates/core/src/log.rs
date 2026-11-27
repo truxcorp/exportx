@@ -26,6 +26,12 @@ pub enum Event {
     Erased,
     /// The original was copied back from its verified copy.
     Restored,
+    /// Moved into the tree instead of copied (same disk, ADR 0006); logged before the
+    /// move. `size` is the file's.
+    Moved,
+    /// Moved back to its original name by undo.
+    #[serde(rename = "moved-back")]
+    MovedBack,
 }
 
 /// The templates and folder names a copy was made with.
@@ -65,6 +71,9 @@ pub struct LogLine {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub error: Option<String>,
     pub layout: LayoutRecord,
+    /// The copy or move this line belongs to: undoing a move takes back that one only.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub run: Option<String>,
 }
 
 impl LogLine {
@@ -79,12 +88,23 @@ impl LogLine {
             sha256: None,
             error: None,
             layout: layout.clone(),
+            run: None,
         }
+    }
+
+    pub fn in_run(mut self, run: &str) -> Self {
+        self.run = Some(run.to_owned());
+        self
     }
 
     pub fn with_hash(mut self, size: u64, sha256: String) -> Self {
         self.size = Some(size);
         self.sha256 = Some(sha256);
+        self
+    }
+
+    pub fn with_size(mut self, size: u64) -> Self {
+        self.size = Some(size);
         self
     }
 

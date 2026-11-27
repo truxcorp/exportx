@@ -3,6 +3,7 @@
 //
 // source → dest → details → planning → (days → planning) → preview → copying → result
 //   → erasing → erased → (undoing) → done
+// After a move (same disk, ADR 0006): result → (undoing) → done, no erase question.
 
 export const DEFAULT_PREFIX = "txo";
 const DEFAULT_PRESET = "classique";
@@ -19,6 +20,11 @@ export function start(settings = {}) {
     date: { kind: "files" },
     days: [],
     entries: [],
+    // The preview's choice: "copy", or "move" when the destination is on the same disk.
+    movable: false,
+    copySize: "",
+    copyFits: true,
+    mode: "copy",
     progress: null,
     outcome: null,
     eraseOutcome: null,
@@ -50,8 +56,11 @@ export function next(s, e) {
     case "planned":
       if (s.step !== "planning") return s;
       switch (e.result.kind) {
-        case "plan":
-          return { ...s, entries: e.result.entries, step: "preview" };
+        case "plan": {
+          const { entries, movable = false, copy_size = "", copy_fits = true } = e.result;
+          const mode = movable ? "move" : "copy";
+          return { ...s, entries, movable, copySize: copy_size, copyFits: copy_fits, mode, step: "preview" };
+        }
         case "days":
           return { ...s, days: e.result.days, step: "days" };
         default:
@@ -66,6 +75,11 @@ export function next(s, e) {
             ? { kind: "each" }
             : { kind: "none" };
       return { ...s, date, step: "planning" };
+    }
+    case "mode": {
+      if (s.step !== "preview") return s;
+      const allowed = e.mode === "move" ? s.movable : s.copyFits;
+      return allowed ? { ...s, mode: e.mode } : s;
     }
     case "confirm":
       return s.step === "preview"
@@ -83,14 +97,18 @@ export function next(s, e) {
         : s;
     case "progress":
       return s.step === "copying" ? { ...s, progress: e.line } : s;
-    case "copied":
+    case "copied": {
       if (s.step !== "copying") return s;
+      const moved = e.outcome.moved || 0;
       return {
         ...s,
         outcome: e.outcome,
         step: "result",
-        canErase: e.outcome.failed.length === 0 && e.outcome.copied > 0,
+        // On the same disk erasing is refused (one exemplar left): never asked.
+        canErase: !s.movable && e.outcome.failed.length === 0 && e.outcome.copied > 0,
+        canUndo: moved > 0,
       };
+    }
     case "erase":
       if (s.step !== "result") return s;
       if (!e.yes || !s.canErase) return { ...s, step: "done" };
@@ -100,7 +118,7 @@ export function next(s, e) {
         ? { ...s, eraseOutcome: e.outcome, step: "erased", canUndo: e.outcome.done > 0 }
         : s;
     case "undo":
-      return s.step === "erased" && s.canUndo ? { ...s, step: "undoing" } : s;
+      return (s.step === "erased" || s.step === "result") && s.canUndo ? { ...s, step: "undoing" } : s;
     case "undone":
       return s.step === "undoing" ? { ...s, eraseOutcome: e.outcome, step: "done" } : s;
     case "back":
@@ -135,4 +153,24 @@ export function planRequest(s) {
     date: s.date,
     preset: s.preset,
   };
+}
+
+/**
+ * The Rust command a transition starts: once, when its step begins. An event that leaves
+ * the step as it was (a second Ctrl+Z during an undo) starts nothing.
+ */
+export function effect(before, after) {
+  if (before.step === after.step) return null;
+  switch (after.step) {
+    case "planning":
+      return "plan";
+    case "copying":
+      return "apply";
+    case "erasing":
+      return "erase";
+    case "undoing":
+      return after.outcome && after.outcome.moved ? "undo_move" : "undo";
+    default:
+      return null;
+  }
 }

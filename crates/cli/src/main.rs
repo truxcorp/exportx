@@ -3,8 +3,10 @@
 //!   exportpro plan|apply --source <dir> --dest <dir> --shoot <name> [--prefix <p>]
 //!                  [--date YYYY-MM-DD | --split | --no-date]
 //!                  [--preset classique|lisible] [--shoot-path <template>] [--file-path <template>]
+//!                  [--move]   (same disk only: move instead of copy, undone by `undo`)
 //!
 //!   exportpro erase|undo <shoot folder>...
+//!   exportpro undo --run <id> <shoot folder>...   (puts back what `apply --move` moved)
 //!
 //! Every command takes `--lang fr|en`; the default follows LC_ALL, LC_MESSAGES, LANG.
 //!
@@ -15,13 +17,15 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use chrono::NaiveDate;
+use exportpro_core::apply::{Mode, ShootLocks};
 use exportpro_core::{DateChoice, Lang, Layout, Plan, Request, Settings, Template};
 
 const DEFAULT_PREFIX: &str = "txo";
 const USAGE: &str = "usage: exportpro plan|apply --source <dir> --dest <dir> --shoot <name> [--prefix <p>] \
 [--date YYYY-MM-DD | --split | --no-date] [--preset classique|lisible] \
-[--shoot-path <template>] [--file-path <template>] [--lang fr|en]\n       \
-exportpro erase|undo <shoot folder>... [--lang fr|en]";
+[--shoot-path <template>] [--file-path <template>] [--move] [--lang fr|en]\n       \
+exportpro erase|undo <shoot folder>... [--lang fr|en]\n       \
+exportpro undo --run <id> <shoot folder>...   (puts back what `apply --move` moved)";
 
 /// Options that take a value: what follows them is never read as an option.
 const VALUE_OPTIONS: &[&str] = &[
@@ -108,6 +112,8 @@ struct PlanArgs {
     preset: Option<String>,
     shoot_path: Option<String>,
     file_path: Option<String>,
+    /// `--move`: move the files instead of copying them (same disk only, ADR 0006).
+    moving: bool,
 }
 
 enum Failure {
@@ -148,6 +154,7 @@ fn parse_plan(args: &[String], lang: Lang) -> Result<PlanArgs, String> {
             "--preset" => a.preset = Some(value()?),
             "--shoot-path" => a.shoot_path = Some(value()?),
             "--file-path" => a.file_path = Some(value()?),
+            "--move" => a.moving = true,
             other => return Err(lang.unknown_option(other)),
         }
     }
@@ -181,7 +188,7 @@ fn layout(
 
 fn run(cmd: &str, args: &[String], lang: Lang) -> Result<(), Failure> {
     // A copy plans under the shoot locks; a preview locks nothing.
-    let (plan, req, _locks) = make_plan(args, lang, cmd == "apply")?;
+    let (plan, req, mode, _locks) = make_plan(args, lang, cmd == "apply")?;
     for a in &plan.already {
         eprintln!("exportpro: {}", lang.already_copied(&a.name, &a.copy));
     }
@@ -199,8 +206,8 @@ fn run(cmd: &str, args: &[String], lang: Lang) -> Result<(), Failure> {
         }
         return Ok(());
     }
-    let outcome = apply_showing_progress(&plan, &req, lang);
-    if !outcome.copied.is_empty() {
+    let outcome = apply_showing_progress(&plan, &req, mode, lang);
+    if !outcome.copied.is_empty() || !outcome.moved.is_empty() {
         let saved = Settings {
             dest: Some(req.dest.clone()),
             prefix: Some(req.prefix.clone()),
@@ -215,7 +222,7 @@ fn run(cmd: &str, args: &[String], lang: Lang) -> Result<(), Failure> {
             eprintln!("exportpro: settings: {e}");
         }
     }
-    for e in &outcome.copied {
+    for e in outcome.copied.iter().chain(&outcome.moved) {
         println!("{} -> {}", e.name, e.dest.display());
     }
     for (e, err) in &outcome.failed {
@@ -227,37 +234,66 @@ fn run(cmd: &str, args: &[String], lang: Lang) -> Result<(), Failure> {
     for log in &outcome.logs {
         println!("log: {}", log.display());
     }
+    if !outcome.moved.is_empty() {
+        let shoots: Vec<PathBuf> = outcome
+            .logs
+            .iter()
+            .filter_map(|log| log.parent().map(PathBuf::from))
+            .collect();
+        println!("{}", lang.moved(outcome.moved.len(), &outcome.run, &shoots));
+    }
     if outcome.failed.is_empty() {
-        println!("{}", lang.copied(outcome.copied.len()));
+        if !outcome.copied.is_empty() || outcome.moved.is_empty() {
+            println!("{}", lang.copied(outcome.copied.len()));
+        }
         Ok(())
     } else {
-        Err(Failure::Error(lang.copied_with_failures(
+        let (copied, moved, failed) = (
             outcome.copied.len(),
+            outcome.moved.len(),
             outcome.failed.len(),
-        )))
+        );
+        Err(Failure::Error(if mode == Mode::Move {
+            lang.moved_with_failures(moved, copied, failed)
+        } else {
+            lang.copied_with_failures(copied, failed)
+        }))
     }
 }
 
 /// `exportpro erase|undo <shoot folder>...`
-fn run_log_command(cmd: &str, folders: &[String], lang: Lang) -> ExitCode {
+fn run_log_command(cmd: &str, args: &[String], lang: Lang) -> ExitCode {
+    // `undo --run <id>`: move back the files of that move (`apply --move` prints it).
+    let mut folders = args.to_vec();
+    let mut run = None;
+    if cmd == "undo"
+        && let Some(i) = folders.iter().position(|a| a == "--run")
+    {
+        if i + 1 >= folders.len() {
+            eprintln!("exportpro: {}", lang.needs_value("--run"));
+            return ExitCode::FAILURE;
+        }
+        run = Some(folders.remove(i + 1));
+        folders.remove(i);
+    }
     if folders.is_empty() {
         eprintln!("exportpro: {}\n{USAGE}", lang.needs_shoot_folders(cmd));
         return ExitCode::FAILURE;
     }
     let mut ok = true;
-    for folder in folders {
+    for folder in &folders {
         let folder = PathBuf::from(folder);
-        let result = if cmd == "erase" {
-            exportpro_core::erase::erase(&folder)
-        } else {
-            exportpro_core::erase::undo(&folder)
+        let result = match (cmd, &run) {
+            ("erase", _) => exportpro_core::erase::erase(&folder),
+            (_, Some(run)) => exportpro_core::erase::undo_move(&folder, run),
+            (_, None) => exportpro_core::erase::undo(&folder),
         };
         match result {
             Ok(outcome) => {
-                let verb = if cmd == "erase" {
-                    lang.erased()
-                } else {
-                    lang.restored()
+                let verb = match (cmd, &run) {
+                    ("erase", _) => lang.erased(),
+                    (_, Some(_)) => lang.moved_back(),
+                    (_, None) => lang.restored(),
                 };
                 for path in &outcome.done {
                     println!("{}", lang.done_line(verb, path));
@@ -304,7 +340,7 @@ fn make_plan(
     args: &[String],
     lang: Lang,
     locked: bool,
-) -> Result<(Plan, Request, Option<exportpro_core::apply::ShootLocks>), Failure> {
+) -> Result<(Plan, Request, Mode, Option<ShootLocks>), Failure> {
     let mut a = parse_plan(args, lang)?;
     // Options left out come from the last copy.
     let saved = Settings::load();
@@ -339,27 +375,34 @@ fn make_plan(
         exportpro_core::PlanError::SeveralDays(days) => Failure::ChooseDay(days),
         e => Failure::Error(lang.plan_error(&e, &source)),
     };
+    let mode = if a.moving { Mode::Move } else { Mode::Copy };
     if locked {
-        let (plan, locks) = exportpro_core::apply::plan_locked(&groups, &req).map_err(refused)?;
-        Ok((plan, req, Some(locks)))
+        let (plan, locks) =
+            exportpro_core::apply::plan_locked_for(&groups, &req, mode).map_err(refused)?;
+        Ok((plan, req, mode, Some(locks)))
     } else {
-        let plan = exportpro_core::plan(&groups, &req).map_err(refused)?;
-        Ok((plan, req, None))
+        let plan = exportpro_core::plan::plan_for(&groups, &req, mode).map_err(refused)?;
+        Ok((plan, req, mode, None))
     }
 }
 
 /// Copy the plan; on a terminal, keep the app's progress line updated on stderr.
-fn apply_showing_progress(plan: &Plan, req: &Request, lang: Lang) -> exportpro_core::Outcome {
+fn apply_showing_progress(
+    plan: &Plan,
+    req: &Request,
+    mode: Mode,
+    lang: Lang,
+) -> exportpro_core::Outcome {
     use std::io::{IsTerminal, Write};
     use std::time::Instant;
 
     let mut err = std::io::stderr();
     if !err.is_terminal() {
-        return exportpro_core::apply(plan, req);
+        return exportpro_core::apply::apply_with(plan, req, mode, |_| {});
     }
     let mut meter = exportpro_core::progress::Meter::new(Instant::now());
     let mut shown = false;
-    let outcome = exportpro_core::apply_with_progress(plan, req, |p| {
+    let outcome = exportpro_core::apply::apply_with(plan, req, mode, |p| {
         if let Some(report) = meter.update(Instant::now(), p) {
             // Back to the line's start, then clear what's left of the previous line.
             let _ = write!(err, "\r{}\x1b[K", lang.progress(&report));

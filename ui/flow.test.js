@@ -3,7 +3,7 @@
 // result → erase question.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { start, next, planRequest } from "./flow.js";
+import { start, next, planRequest, effect } from "./flow.js";
 
 const entries = [{ name: "a.jpg", dest: "2024/03/05/s/p/o/jpg/txo_0001.jpg" }];
 
@@ -200,4 +200,91 @@ test("the copy's progress counts only the files to copy, not those already copie
     bytes_total: 0,
     text: "",
   });
+});
+
+// ADR 0006: moving instead of copying on the same disk.
+function atPreview(result) {
+  let s = atDetails();
+  s = next(s, { type: "details", shoot: "s", prefix: "txo", date: "" });
+  return next(s, { type: "planned", result: { kind: "plan", entries, ...result } });
+}
+
+test("on the same disk the preview offers moving, preselected, and can switch to copying", () => {
+  let s = atPreview({ movable: true, copy_size: "12,4 Go", copy_fits: true });
+  assert.equal(s.movable, true);
+  assert.equal(s.copySize, "12,4 Go");
+  assert.equal(s.mode, "move");
+  s = next(s, { type: "mode", mode: "copy" });
+  assert.equal(s.mode, "copy");
+  s = next(s, { type: "mode", mode: "move" });
+  assert.equal(s.mode, "move");
+});
+
+test("on another disk the preview only copies", () => {
+  let s = atPreview({ movable: false, copy_size: "5 B", copy_fits: true });
+  assert.equal(s.mode, "copy");
+  s = next(s, { type: "mode", mode: "move" });
+  assert.equal(s.mode, "copy");
+});
+
+test("when a copy doesn't fit, only moving is possible", () => {
+  let s = atPreview({ movable: true, copy_size: "900 GB", copy_fits: false });
+  assert.equal(s.mode, "move");
+  s = next(s, { type: "mode", mode: "copy" });
+  assert.equal(s.mode, "move");
+});
+
+test("after a move, no erase question: undo instead, then done", () => {
+  let s = atPreview({ movable: true, copy_size: "5 B", copy_fits: true });
+  s = next(s, { type: "confirm" });
+  s = next(s, { type: "copied", outcome: { copied: 0, moved: 1, failed: [], shoots: ["/p/s"] } });
+  assert.equal(s.step, "result");
+  assert.equal(s.canErase, false);
+  assert.equal(s.canUndo, true);
+  s = next(s, { type: "undo" });
+  assert.equal(s.step, "undoing");
+  s = next(s, { type: "undone", outcome: { done: 1, kept: [] } });
+  assert.equal(s.step, "done");
+});
+
+test("a copy on the same disk doesn't ask to erase the originals either", () => {
+  let s = atPreview({ movable: true, copy_size: "5 B", copy_fits: true });
+  s = next(s, { type: "mode", mode: "copy" });
+  s = next(s, { type: "confirm" });
+  s = next(s, { type: "copied", outcome: { copied: 1, moved: 0, failed: [], shoots: ["/p/s"] } });
+  assert.equal(s.canErase, false);
+  assert.equal(s.canUndo, false);
+});
+
+test("each step's command runs once, when the step starts, never again on a repeated key", () => {
+  const step = (s, e) => {
+    const after = next(s, e);
+    return [after, effect(s, after)];
+  };
+  let s = atDetails();
+  let cmd;
+  [s, cmd] = step(s, { type: "details", shoot: "s", prefix: "txo", date: "" });
+  assert.equal(cmd, "plan");
+  [s, cmd] = step(s, { type: "planned", result: { kind: "plan", entries, movable: true, copy_size: "5 B", copy_fits: true } });
+  assert.equal(cmd, null);
+  [s, cmd] = step(s, { type: "confirm" });
+  assert.equal(cmd, "apply");
+  [s, cmd] = step(s, { type: "progress", line: { files_done: 1, files_total: 1, bytes_done: 5, bytes_total: 5, text: "" } });
+  assert.equal(cmd, null);
+  [s, cmd] = step(s, { type: "copied", outcome: { copied: 0, moved: 1, failed: [], shoots: ["/p/s"], run: "r1" } });
+  assert.equal(cmd, null);
+  [s, cmd] = step(s, { type: "undo" });
+  assert.equal(cmd, "undo_move");
+  // Ctrl+Z again while the undo runs: nothing more.
+  [s, cmd] = step(s, { type: "undo" });
+  assert.equal(cmd, null);
+
+  let c = atPreview({ movable: false, copy_size: "5 B", copy_fits: true });
+  c = next(c, { type: "confirm" });
+  c = next(c, { type: "copied", outcome: { copied: 1, moved: 0, failed: [], shoots: ["/p/s"], run: "r2" } });
+  [c, cmd] = step(c, { type: "erase", yes: true });
+  assert.equal(cmd, "erase");
+  [c, cmd] = step(c, { type: "erased", outcome: { done: 1, kept: [] } });
+  [c, cmd] = step(c, { type: "undo" });
+  assert.equal(cmd, "undo");
 });

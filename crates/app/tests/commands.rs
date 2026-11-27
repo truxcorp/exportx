@@ -7,6 +7,7 @@ use std::time::{Duration, SystemTime};
 use exportpro_app::commands::{
     self, DateRequest, PlanRequest, PlanResult, PlannedFile, ProgressLine,
 };
+use exportpro_core::apply::Mode;
 use exportpro_core::{Lang, Progress};
 
 struct Dirs {
@@ -50,6 +51,22 @@ fn mk(dir: &Path, name: &str, day_offset: u64, secs: u64) {
         .unwrap();
 }
 
+/// A card and a destination on the same disk: the files can be moved (ADR 0006).
+fn dirs_on_one_disk() -> Dirs {
+    let tmp = tempfile::tempdir().unwrap();
+    let src = tmp.path().join("card");
+    let dest = tmp.path().join("photos");
+    fs::create_dir_all(&src).unwrap();
+    let settings = tmp.path().join("config/settings.toml");
+    Dirs {
+        _dest_tmp: tempfile::tempdir().unwrap(),
+        _tmp: tmp,
+        src,
+        dest,
+        settings,
+    }
+}
+
 fn request(d: &Dirs, date: DateRequest) -> PlanRequest {
     PlanRequest {
         source: d.src.clone(),
@@ -80,7 +97,7 @@ fn utc() {
 /// The preview's entries, as the app shows them before Copy.
 fn previewed(req: &PlanRequest) -> Vec<PlannedFile> {
     match commands::plan(req, Lang::En) {
-        PlanResult::Plan { entries } => entries,
+        PlanResult::Plan { entries, .. } => entries,
         other => panic!("{other:?}"),
     }
 }
@@ -99,7 +116,10 @@ fn plan_returns_the_preview() {
             entries: vec![PlannedFile::new(
                 "a.jpg",
                 "2024/03/05/s/p/o/jpg/txo_0001.jpg"
-            )]
+            )],
+            movable: false,
+            copy_size: "5 B".into(),
+            copy_fits: true,
         }
     );
 }
@@ -131,7 +151,7 @@ fn each_day_and_no_date_choices_plan_accordingly() {
     let none = commands::plan(&request(&d, DateRequest::None), Lang::En);
 
     let dests = |r: PlanResult| match r {
-        PlanResult::Plan { entries } => entries.into_iter().map(|e| e.dest).collect::<Vec<_>>(),
+        PlanResult::Plan { entries, .. } => entries.into_iter().map(|e| e.dest).collect::<Vec<_>>(),
         other => panic!("{other:?}"),
     };
     assert_eq!(
@@ -181,7 +201,10 @@ fn the_lisible_preset_is_used() {
             entries: vec![PlannedFile::new(
                 "a.jpg",
                 "2024/03/05/s/photo/originaux/jpg/txo_0001.jpg"
-            )]
+            )],
+            movable: false,
+            copy_size: "5 B".into(),
+            copy_fits: true,
         }
     );
 }
@@ -407,4 +430,54 @@ fn the_preview_lists_files_already_copied_and_the_copy_accepts_it() {
         .collect();
     assert_eq!(already, ["a.jpg"]);
     assert_eq!(outcome.copied, 1);
+}
+
+#[test]
+fn plan_offers_moving_on_the_same_disk_with_what_a_copy_would_add() {
+    utc();
+    let d = dirs_on_one_disk();
+    mk(&d.src, "a.jpg", 0, 3600);
+    mk(&d.src, "b.jpg", 0, 3700);
+
+    let result = commands::plan(&request(&d, DateRequest::Files), Lang::Fr);
+
+    match result {
+        PlanResult::Plan {
+            entries,
+            movable,
+            copy_size,
+            copy_fits,
+        } => {
+            assert_eq!(entries.len(), 2);
+            assert!(movable);
+            assert_eq!(copy_size, "10 o");
+            assert!(copy_fits);
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn moving_from_the_preview_then_undo_puts_the_files_back() {
+    utc();
+    let d = dirs_on_one_disk();
+    mk(&d.src, "a.jpg", 0, 3600);
+    mk(&d.src, "b.jpg", 0, 3700);
+    let req = request(&d, DateRequest::Files);
+    let expected = previewed(&req);
+
+    let outcome =
+        commands::apply_mode(&req, &expected, Mode::Move, Lang::En, &d.settings, |_| {}).unwrap();
+
+    assert_eq!((outcome.copied, outcome.moved), (0, 2), "{outcome:?}");
+    assert!(outcome.failed.is_empty());
+    assert!(!d.src.join("a.jpg").exists());
+    let shoot = d.dest.join("2024/03/05/s");
+    assert_eq!(outcome.shoots, std::slice::from_ref(&shoot));
+    assert!(shoot.join("p/o/jpg/txo_0001.jpg").is_file());
+
+    let undone = commands::undo_move(&outcome.shoots, &outcome.run, Lang::En);
+
+    assert_eq!((undone.done, undone.kept.len()), (2, 0));
+    assert_eq!(fs::read_to_string(d.src.join("a.jpg")).unwrap(), "a.jpg");
 }

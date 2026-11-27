@@ -2,6 +2,7 @@
 //! Both read the shoot folder's `exportpro.log`, never the current settings.
 
 use std::collections::BTreeMap;
+use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -55,6 +56,20 @@ pub enum Keep {
     Trash(String),
     /// Copying it back failed.
     CopyBack(IoReason),
+    /// Moving it back failed.
+    MoveBack(IoReason),
+    /// Its original name is used by another file now: the moved file stays.
+    NameTaken {
+        path: PathBuf,
+    },
+    /// The moved file's size changed since it was moved (edited?): it stays.
+    Changed {
+        path: PathBuf,
+    },
+    /// The moved file is no longer where it was moved (renamed or deleted since).
+    Gone {
+        path: PathBuf,
+    },
     /// A log line that couldn't be used, skipped.
     LogLine {
         line: usize,
@@ -152,6 +167,66 @@ pub fn undo(shoot: &Path) -> io::Result<Outcome> {
         }
     }
     Ok(outcome)
+}
+
+/// Move back the files that the move `run` of `shoot` moved (ADR 0006): other moves and
+/// erased originals are left alone.
+pub fn undo_move(shoot: &Path, run: &str) -> io::Result<Outcome> {
+    let log_path = shoot.join(LOG_NAME);
+    let (lines, problems) = log::read(&log_path)?;
+    let mut outcome = Outcome::with_problems(&log_path, problems);
+    // That run's lines only: a later run may have logged the same original since.
+    let of_run: Vec<LogLine> = lines
+        .into_iter()
+        .filter(|l| l.run.as_deref() == Some(run))
+        .collect();
+    for line in last_events(&of_run) {
+        if line.event == Event::Moved {
+            move_back(shoot, &log_path, &line, &mut outcome);
+        }
+    }
+    Ok(outcome)
+}
+
+/// Undo the move of one file (ADR 0006): rename it back to its original name.
+fn move_back(shoot: &Path, log_path: &Path, line: &LogLine, outcome: &mut Outcome) {
+    let moved = shoot.join(&line.dest);
+    let size = fs::symlink_metadata(&moved).map(|m| m.len()).ok();
+    if size.is_none() {
+        // Back at its name already, or never moved (the log is written first): nothing
+        // to undo. Else it was renamed or deleted since.
+        if fs::symlink_metadata(&line.source).is_err() {
+            let why = Keep::Gone { path: moved };
+            outcome.kept.push((line.source.clone(), why));
+        }
+        return;
+    }
+    if fs::symlink_metadata(&line.source).is_ok() {
+        let why = Keep::NameTaken {
+            path: line.source.clone(),
+        };
+        outcome.kept.push((line.source.clone(), why));
+        return;
+    }
+    if size != line.size {
+        outcome
+            .kept
+            .push((line.source.clone(), Keep::Changed { path: moved }));
+        return;
+    }
+    if let Err(e) = crate::apply::move_file(&moved, &line.source) {
+        let why = Keep::MoveBack(IoReason::from(&e));
+        outcome.kept.push((line.source.clone(), why));
+        return;
+    }
+    if let Err(e) = log::append(log_path, &line.follow_up(Event::MovedBack)) {
+        let why = Keep::RestoredNotLogged {
+            log: log_path.to_path_buf(),
+            error: IoReason::from(&e),
+        };
+        outcome.kept.push((line.source.clone(), why));
+    }
+    outcome.done.push(line.source.clone());
 }
 
 /// The last event of each original, in log order of their first appearance.

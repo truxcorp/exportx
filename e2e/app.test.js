@@ -196,3 +196,39 @@ test("a pasted folder is checked right away, on its own screen", async () => {
     await app.close();
   }
 });
+
+test("on the same disk: move, then Ctrl+Z puts the files back (ADR 0006)", async () => {
+  const app = await launch({ lang: "fr_FR.UTF-8" });
+  try {
+    const src = join(app.home, "carte");
+    mk(src, "2024-03-05T09:00", ["A.JPG", "B.JPG"]);
+    const dest = join(app.home, "photos");
+    mkdirSync(dest, { recursive: true });
+    await pasteFolders(app, src, dest);
+    await app.type("#shoot", "rangement");
+    await app.click("#details-ok");
+
+    await app.waitText("La destination est sur le même disque que les fichiers");
+    assert.match(await app.text(), /2 fichier\(s\) seront déplacés/);
+    await app.screenshot("5b-preview-same-disk");
+    await app.click("[data-action=copy]");
+
+    await app.waitText("2 fichier(s) déplacé(s)");
+    await app.screenshot("6b-moved");
+    assert.ok(!existsSync(join(src, "A.JPG")), "moved, not copied");
+    assert.equal(readFileSync(join(dest, "2024/03/05/rangement/p/o/jpg/txo_0001.jpg"), "utf8"), "A.JPG");
+    assert.ok(!(await app.text()).includes("Effacer les originaux"), "no erase question after a move");
+
+    // Ctrl+Shift+Z (redo elsewhere) does nothing here.
+    await (await app.find("body")).sendKeys("\uE009\uE008z\uE000");
+    await app.waitText("2 fichier(s) déplacé(s)");
+    assert.ok(!existsSync(join(src, "A.JPG")), "Ctrl+Shift+Z doesn't undo");
+
+    await (await app.find("body")).sendKeys("\uE009z\uE000");
+    await app.waitText("2 fichier(s) remis à leur place");
+    await app.screenshot("8b-moved-back");
+    assert.equal(readFileSync(join(src, "A.JPG"), "utf8"), "A.JPG");
+  } finally {
+    await app.close();
+  }
+});

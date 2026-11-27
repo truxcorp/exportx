@@ -29,6 +29,11 @@ Plan and decisions: `docs/plan/tauri-prototype.md`, `docs/adr/`.
 5. Then, if you want, **Erase the originals** (to the Trash). **Undo** puts them back from
    the copies.
 
+When the destination is on the same disk as the files, the preview offers **Move** (instant,
+no extra space) or **Copy** (the copies take as much room as the originals). A move is undone
+with one click or Ctrl+Z; in a terminal, `apply --move` prints the command that undoes it
+(`exportpro undo --run <id> <shoot folder>`).
+
 Tree layouts (`--preset`):
 - `classique` (default): `YYYY/MM/DD/<shoot>/p|v/o/<ext>/`
 - `lisible`: `…/photo|video/originaux/<ext>/`
@@ -38,7 +43,9 @@ The same features from a terminal:
 ```
 exportpro plan|apply --source <card> --dest <photos> --shoot <name> [--prefix p]
                      [--date YYYY-MM-DD | --split | --no-date] [--preset classique|lisible]
+                     [--move]
 exportpro erase|undo <shoot folder>
+exportpro undo --run <id> <shoot folder>
 ```
 
 ## Getting a build

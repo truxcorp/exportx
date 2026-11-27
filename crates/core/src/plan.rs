@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use chrono::NaiveDate;
 
+use crate::apply::Mode;
 use crate::layout::{Layout, Vars};
 use crate::log::{self, Event, LogLine};
 use crate::names::{NameProblem, check_name};
@@ -71,6 +72,8 @@ pub struct Plan {
     /// Files whose verified copy is already in the shoot (same name, size and SHA-256 in
     /// its log, copy still there): not copied again.
     pub already: Vec<Already>,
+    /// The size of the files to copy: what a copy adds on the destination.
+    pub bytes: u64,
 }
 
 /// A source file already copied into the shoot.
@@ -129,6 +132,8 @@ pub enum PlanError {
         needed: u64,
         free: u64,
     },
+    /// Moving was asked but the destination is on another disk than the source.
+    NotMovable,
     /// A folder or file of the destination can't be read, so numbers or free names
     /// can't be checked.
     CannotRead {
@@ -146,8 +151,13 @@ pub fn days(groups: &[Group]) -> Vec<(NaiveDate, usize)> {
     days.into_iter().collect()
 }
 
-/// Number the groups in order and place each file in the tree.
+/// Number the groups in order and place each file in the tree, to copy them.
 pub fn plan(groups: &[Group], req: &Request) -> Result<Plan, PlanError> {
+    plan_for(groups, req, Mode::Copy)
+}
+
+/// `plan`, to copy or to move the files.
+pub fn plan_for(groups: &[Group], req: &Request, mode: Mode) -> Result<Plan, PlanError> {
     for name in [&req.shoot, &req.prefix] {
         check(name)?;
     }
@@ -259,12 +269,17 @@ pub fn plan(groups: &[Group], req: &Request) -> Result<Plan, PlanError> {
             Err(err) => return Err(cannot_read(&path, &err)),
         }
     }
-    check_room(req, &entries)?;
-    Ok(Plan {
+    let bytes = check_room(req, &entries, mode)?;
+    let plan = Plan {
         entries,
         edited,
         already,
-    })
+        bytes,
+    };
+    if mode == Mode::Move && !movable(&plan, req) {
+        return Err(PlanError::NotMovable);
+    }
+    Ok(plan)
 }
 
 /// What to tell about `f` before copying it: a capture date before 2000-01-02 (a camera
@@ -386,29 +401,29 @@ fn fs_type(folder: &Path) -> Option<String> {
 /// Room kept on top of the files: the log, the folders, the file system's own blocks.
 pub const ROOM_MARGIN: u64 = 64 * 1024 * 1024;
 
-/// Refuse a plan whose copies can't fit on the destination's disk.
-fn check_room(req: &Request, entries: &[Entry]) -> Result<(), PlanError> {
-    let mut needed = ROOM_MARGIN;
+/// Refuse a plan whose copies can't fit on the destination's disk (a move copies only
+/// symbolic links, the rest needs no room); the files' size.
+fn check_room(req: &Request, entries: &[Entry], mode: Mode) -> Result<u64, PlanError> {
+    let mut total: u64 = 0;
+    let mut copied: u64 = 0;
     let mut sizes = Vec::with_capacity(entries.len());
     for e in entries {
         let size = fs::metadata(&e.source)
             .map_err(|err| cannot_read(&e.source, &err))?
             .len();
-        needed = needed.saturating_add(size);
+        let is_link = fs::symlink_metadata(&e.source).is_ok_and(|m| m.is_symlink());
+        total = total.saturating_add(size);
+        if mode == Mode::Copy || is_link {
+            copied = copied.saturating_add(size);
+        }
         sizes.push(size);
     }
-    // The destination may not exist yet: ask about its nearest existing folder (absolute,
-    // so a relative path ends at the current folder, not at "").
+    let needed = ROOM_MARGIN.saturating_add(copied);
+    // The destination may not exist yet: ask about its nearest existing folder.
     let dest = std::path::absolute(&req.dest).map_err(|err| cannot_read(&req.dest, &err))?;
-    let mut at = dest.as_path();
-    while !at.exists() {
-        match at.parent() {
-            Some(parent) => at = parent,
-            None => break,
-        }
-    }
+    let at = nearest_existing(&dest);
     let free = fs4::available_space(at).map_err(|err| cannot_read(at, &err))?;
-    if needed > free {
+    if (mode == Mode::Copy || copied > 0) && needed > free {
         return Err(PlanError::NoRoom { needed, free });
     }
     if let Some(kind) = fs_type(at)
@@ -432,7 +447,83 @@ fn check_room(req: &Request, entries: &[Entry]) -> Result<(), PlanError> {
             probed.push(folder);
         }
     }
-    Ok(())
+    Ok(total)
+}
+
+/// `path` or its nearest existing parent (`path` absolute, so it ends at a root, not "").
+fn nearest_existing(path: &Path) -> &Path {
+    let mut at = path;
+    while !at.exists() {
+        match at.parent() {
+            Some(parent) => at = parent,
+            None => break,
+        }
+    }
+    at
+}
+
+/// Whether the plan's files can be moved instead of copied (same disk, ADR 0006): a test
+/// file renamed from the source folder to the destination. Asked only when needed, so a
+/// plain copy writes nothing in the source folder.
+pub fn movable(plan: &Plan, req: &Request) -> bool {
+    plan.entries
+        .first()
+        .and_then(|e| e.source.parent())
+        .is_some_and(|source| can_move(source, &req.dest))
+}
+
+/// Whether files of `source` can be renamed into `dest`: tried with a small file, renamed
+/// to the destination's nearest existing folder and removed. Folders on different
+/// devices are never tried (nothing written on a card that is copied from).
+fn can_move(source: &Path, dest: &Path) -> bool {
+    let Ok(dest) = std::path::absolute(dest) else {
+        return false;
+    };
+    let at = nearest_existing(&dest);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let dev = |p: &Path| fs::metadata(p).map(|m| m.dev()).ok();
+        dev(source).is_some() && dev(source) == dev(at) && rename_works(source, at)
+    }
+    // Elsewhere (Windows, after the MVP) the device can't be compared: no move offered, so
+    // nothing is ever written on a card.
+    #[cfg(not(unix))]
+    {
+        let _ = (source, at);
+        false
+    }
+}
+
+/// A small file made in `from` can be renamed into `to` (then removed).
+#[cfg(unix)]
+fn rename_works(from: &Path, to: &Path) -> bool {
+    // Unique per call: two plans at once (app threads) never share a test file.
+    static COUNT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let n = COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let name = format!(".exportpro-move-test-{}-{n}", std::process::id());
+    let (probe, target) = (from.join(&name), to.join(&name));
+    if fs::symlink_metadata(&target).is_ok() {
+        return false;
+    }
+    if fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&probe)
+        .is_err()
+    {
+        return false;
+    }
+    match fs::rename(&probe, &target) {
+        Ok(()) => {
+            let _ = fs::remove_file(&target);
+            true
+        }
+        Err(_) => {
+            let _ = fs::remove_file(&probe);
+            false
+        }
+    }
 }
 
 /// Write and remove a small file in `folder`, where the shoot's folders will be made:

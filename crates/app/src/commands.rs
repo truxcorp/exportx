@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use chrono::NaiveDate;
+use exportpro_core::apply::Mode;
 use exportpro_core::apply::ShootLocks;
 use exportpro_core::progress::Meter;
 use exportpro_core::{DateChoice, Lang, Layout, PlanError, Progress, Request, Settings};
@@ -33,9 +34,21 @@ pub enum DateRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum PlanResult {
-    Plan { entries: Vec<PlannedFile> },
-    Days { days: Vec<(NaiveDate, usize)> },
-    Error { message: String },
+    Plan {
+        entries: Vec<PlannedFile>,
+        /// The files can be moved instead of copied (same disk, ADR 0006).
+        movable: bool,
+        /// What a copy adds on the destination, worded (`12.4 GB`).
+        copy_size: String,
+        /// A copy fits on the destination (when it doesn't, only moving is possible).
+        copy_fits: bool,
+    },
+    Days {
+        days: Vec<(NaiveDate, usize)>,
+    },
+    Error {
+        message: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -64,10 +77,13 @@ impl PlannedFile {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ApplyOutcome {
     pub copied: usize,
+    pub moved: usize,
     /// File name and why its copy failed.
     pub failed: Vec<(String, String)>,
     /// The shoot folders written, absolute: erase and undo take them.
     pub shoots: Vec<PathBuf>,
+    /// This copy or move's id: undoing a move takes it.
+    pub run: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -77,14 +93,33 @@ pub struct LogOutcome {
     pub kept: Vec<(String, String)>,
 }
 
-/// The core's plan for `req`, or what to show instead; with `locked`, made under the
-/// shoot locks, which are returned with it.
-fn make_plan(
+type Planned = (exportpro_core::Plan, Request, Option<ShootLocks>);
+
+/// Why a plan isn't shown: the core refused it, or something before it failed.
+enum Refused {
+    Plan(PlanError),
+    Shown(PlanResult),
+}
+
+fn shown(refused: Refused, req: &PlanRequest, lang: Lang) -> PlanResult {
+    match refused {
+        Refused::Shown(result) => result,
+        Refused::Plan(PlanError::SeveralDays(days)) => PlanResult::Days { days },
+        Refused::Plan(e) => PlanResult::Error {
+            message: lang.plan_error(&e, &req.source),
+        },
+    }
+}
+
+/// The core's plan for `req` (to copy or to move the files), or why not; with `locked`,
+/// made under the shoot locks, which are returned with it.
+fn make_plan_for(
     req: &PlanRequest,
     lang: Lang,
     locked: bool,
-) -> Result<(exportpro_core::Plan, Request, Option<ShootLocks>), PlanResult> {
-    let error = |message: String| PlanResult::Error { message };
+    mode: Mode,
+) -> Result<Planned, Refused> {
+    let error = |message: String| Refused::Shown(PlanResult::Error { message });
     let layout = Layout::preset(&req.preset).ok_or_else(|| {
         error(match lang {
             Lang::En => format!("unknown preset {:?}", req.preset),
@@ -106,24 +141,35 @@ fn make_plan(
     let groups = exportpro_core::scan(&req.source)
         .map_err(|e| error(lang.cannot_read(&req.source, &(&e).into())))?;
     let planned = if locked {
-        exportpro_core::apply::plan_locked(&groups, &request).map(|(p, l)| (p, Some(l)))
+        exportpro_core::apply::plan_locked_for(&groups, &request, mode).map(|(p, l)| (p, Some(l)))
     } else {
-        exportpro_core::plan(&groups, &request).map(|p| (p, None))
+        exportpro_core::plan::plan_for(&groups, &request, mode).map(|p| (p, None))
     };
-    match planned {
-        Ok((plan, locks)) => Ok((plan, request, locks)),
-        Err(PlanError::SeveralDays(days)) => Err(PlanResult::Days { days }),
-        Err(e) => Err(error(lang.plan_error(&e, &req.source))),
-    }
+    planned
+        .map(|(plan, locks)| (plan, request, locks))
+        .map_err(Refused::Plan)
 }
 
 /// The preview: every original and where it goes, the days to choose from, or why not.
+/// A copy that doesn't fit can still be a move on the same disk.
 pub fn plan(req: &PlanRequest, lang: Lang) -> PlanResult {
-    match make_plan(req, lang, false) {
-        Ok((plan, _, _)) => PlanResult::Plan {
+    let (planned, copy_fits) = match make_plan_for(req, lang, false, Mode::Copy) {
+        Err(Refused::Plan(no_room @ PlanError::NoRoom { .. })) => {
+            match make_plan_for(req, lang, false, Mode::Move) {
+                Ok(planned) => (Ok(planned), false),
+                Err(_) => (Err(Refused::Plan(no_room)), true),
+            }
+        }
+        other => (other, true),
+    };
+    match planned {
+        Ok((plan, request, _)) => PlanResult::Plan {
             entries: previewed_entries(&plan, lang),
+            movable: exportpro_core::plan::movable(&plan, &request),
+            copy_size: lang.size(plan.bytes),
+            copy_fits,
         },
-        Err(other) => other,
+        Err(refused) => shown(refused, req, lang),
     }
 }
 
@@ -178,10 +224,26 @@ pub fn apply(
     settings: &Path,
     progress: impl FnMut(ProgressLine),
 ) -> Result<ApplyOutcome, String> {
-    let (plan, request, _locks) = match make_plan(req, lang, true) {
+    apply_mode(req, expected, Mode::Copy, lang, settings, progress)
+}
+
+/// `apply`, copying or moving the files (ADR 0006).
+pub fn apply_mode(
+    req: &PlanRequest,
+    expected: &[PlannedFile],
+    mode: Mode,
+    lang: Lang,
+    settings: &Path,
+    progress: impl FnMut(ProgressLine),
+) -> Result<ApplyOutcome, String> {
+    let (plan, request, _locks) = match make_plan_for(req, lang, true, mode) {
         Ok(p) => p,
-        Err(PlanResult::Error { message }) => return Err(message),
-        Err(_) => return Err(changed_since_preview(lang)),
+        Err(refused) => {
+            return Err(match shown(refused, req, lang) {
+                PlanResult::Error { message } => message,
+                _ => changed_since_preview(lang),
+            });
+        }
     };
     // Copy exactly what the preview showed: refuse if the card or the destination changed.
     // Name and destination only: notes are worded in a language that may have changed.
@@ -193,7 +255,7 @@ pub fn apply(
     }
     let mut progress = progress;
     let mut meter = Meter::new(Instant::now());
-    let outcome = exportpro_core::apply_with_progress(&plan, &request, |p| {
+    let outcome = exportpro_core::apply::apply_with(&plan, &request, mode, |p| {
         if let Some(report) = meter.update(Instant::now(), p) {
             progress(ProgressLine {
                 progress: report.progress,
@@ -201,7 +263,7 @@ pub fn apply(
             })
         }
     });
-    if !outcome.copied.is_empty() {
+    if !outcome.copied.is_empty() || !outcome.moved.is_empty() {
         let saved = Settings {
             dest: Some(request.dest.clone()),
             prefix: Some(request.prefix.clone()),
@@ -221,6 +283,8 @@ pub fn apply(
     }
     Ok(ApplyOutcome {
         copied: outcome.copied.len(),
+        moved: outcome.moved.len(),
+        run: outcome.run.clone(),
         failed: outcome
             .failed
             .into_iter()
@@ -248,6 +312,13 @@ pub fn undo(shoots: &[PathBuf]) -> LogOutcome {
 /// `undo`, with the reasons for kept files in `lang`.
 pub fn undo_in(shoots: &[PathBuf], lang: Lang) -> LogOutcome {
     each_shoot(shoots, lang, exportpro_core::erase::undo)
+}
+
+/// Move back the files the move `run` moved into these shoot folders.
+pub fn undo_move(shoots: &[PathBuf], run: &str, lang: Lang) -> LogOutcome {
+    each_shoot(shoots, lang, |shoot| {
+        exportpro_core::erase::undo_move(shoot, run)
+    })
 }
 
 fn each_shoot(

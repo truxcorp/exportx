@@ -51,11 +51,40 @@ export const STRINGS = {
     fr: "Les originaux ne sont pas touchés.",
     en: "The originals are not touched.",
   },
+  preview_title_move: { fr: "4. Vérifiez avant de déplacer", en: "4. Check before moving" },
+  preview_count_move: {
+    fr: "{n} fichier(s) seront déplacés dans {dest}",
+    en: "{n} file(s) will be moved to {dest}",
+  },
+  mode_same_disk: {
+    fr: "La destination est sur le même disque que les fichiers :",
+    en: "The destination is on the same disk as the files:",
+  },
+  mode_move: { fr: "Déplacer", en: "Move" },
+  mode_move_help: {
+    fr: "instantané, sans place en plus, et vous pourrez annuler.",
+    en: "instant, no extra space, and you can undo it.",
+  },
+  mode_copy: { fr: "Copier", en: "Copy" },
+  mode_copy_help: {
+    fr: "les copies prennent {size} de plus sur ce disque ; les originaux restent.",
+    en: "the copies take {size} more on this disk; the originals stay.",
+  },
+  mode_copy_no_room: {
+    fr: "pas assez de place sur ce disque pour copier {size}.",
+    en: "not enough room on this disk to copy {size}.",
+  },
   copy: { fr: "Copier", en: "Copy" },
+  move: { fr: "Déplacer", en: "Move" },
+  moving: { fr: "Déplacement en cours…", en: "Moving…" },
   copying: { fr: "Copie en cours…", en: "Copying…" },
 
   result_title: { fr: "Terminé", en: "Done" },
   copied: { fr: "{n} fichier(s) copié(s)", en: "{n} file(s) copied" },
+  moved: { fr: "{n} fichier(s) déplacé(s)", en: "{n} file(s) moved" },
+  undo_move: { fr: "Annuler le déplacement", en: "Undo the move" },
+  undo_hint: { fr: "ou {keys}", en: "or {keys}" },
+  moved_back: { fr: "{n} fichier(s) remis à leur place", en: "{n} file(s) moved back" },
   failed: { fr: "{n} en échec :", en: "{n} failed:" },
   open_folder: { fr: "Ouvrir le dossier", en: "Open folder" },
   erase_question: {
@@ -69,6 +98,7 @@ export const STRINGS = {
   kept: { fr: "{n} gardé(s) :", en: "{n} kept:" },
   undo: { fr: "Annuler l'effacement", en: "Undo erase" },
   undoing: { fr: "Restauration…", en: "Restoring…" },
+  moving_back: { fr: "Remise en place…", en: "Moving back…" },
   restored: { fr: "{n} original(aux) restauré(s)", en: "{n} original(s) restored" },
   restart: { fr: "Nouvel export", en: "New export" },
 };

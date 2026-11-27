@@ -15,10 +15,14 @@ use crate::progress::Progress;
 #[derive(Debug, Default)]
 pub struct Outcome {
     pub copied: Vec<Entry>,
+    /// Moved instead of copied (ADR 0006).
+    pub moved: Vec<Entry>,
     /// The entry and why its copy failed.
     pub failed: Vec<(Entry, CopyFailure)>,
     /// Every `exportpro.log` written, absolute.
     pub logs: Vec<PathBuf>,
+    /// This copy or move's id in the logs: `erase::undo_move` takes it.
+    pub run: String,
 }
 
 /// Why one file of a copy failed; `i18n::Lang::copy_failure` words it.
@@ -39,6 +43,15 @@ pub enum CopyFailure {
     /// Not tried: the card or the disk stopped answering (I/O error, device gone) on an
     /// earlier file.
     NotCopiedDeviceGone,
+}
+
+/// Copy the files, or move them when the destination is on the same disk (ADR 0006).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Mode {
+    #[default]
+    Copy,
+    Move,
 }
 
 /// Copy every entry of `plan` into `req.dest`, logging each one in its shoot folder's
@@ -187,7 +200,16 @@ pub fn plan_locked(
     groups: &[crate::scan::Group],
     req: &Request,
 ) -> Result<(Plan, ShootLocks), crate::plan::PlanError> {
-    plan_locked_with(groups, req, || {})
+    plan_locked_for(groups, req, Mode::Copy)
+}
+
+/// `plan_locked`, to copy or to move the files.
+pub fn plan_locked_for(
+    groups: &[crate::scan::Group],
+    req: &Request,
+    mode: Mode,
+) -> Result<(Plan, ShootLocks), crate::plan::PlanError> {
+    lock_and_plan(groups, req, mode, || {})
 }
 
 /// `plan_locked` with `between` run after the first plan, before locking: the seam tests
@@ -197,14 +219,23 @@ pub fn plan_locked_with(
     req: &Request,
     between: impl FnOnce(),
 ) -> Result<(Plan, ShootLocks), crate::plan::PlanError> {
-    let first = crate::plan::plan(groups, req)?;
+    lock_and_plan(groups, req, Mode::Copy, between)
+}
+
+fn lock_and_plan(
+    groups: &[crate::scan::Group],
+    req: &Request,
+    mode: Mode,
+    between: impl FnOnce(),
+) -> Result<(Plan, ShootLocks), crate::plan::PlanError> {
+    let first = crate::plan::plan_for(groups, req, mode)?;
     between();
     let mut locks = ShootLocks {
         held: Vec::new(),
         created: Vec::new(),
     };
     let locked = add_locks(&mut locks, &first, req, &|f: &File| f.try_lock())
-        .and_then(|()| crate::plan::plan(groups, req))
+        .and_then(|()| crate::plan::plan_for(groups, req, mode))
         // The second plan may reach a shoot folder the first didn't (it appeared meanwhile).
         .and_then(|plan| {
             add_locks(&mut locks, &plan, req, &|f: &File| f.try_lock()).map(|()| plan)
@@ -252,6 +283,7 @@ pub fn apply_using(
     apply_measured(
         plan,
         req,
+        Mode::Copy,
         |from, to, _| copy(from, to),
         |p| progress(p.files_done, p.files_total),
     )
@@ -264,11 +296,16 @@ type Written<'a> = &'a mut dyn FnMut(u64);
 fn apply_measured(
     plan: &Plan,
     req: &Request,
+    mode: Mode,
     mut copy: impl FnMut(&Path, &Path, Written) -> io::Result<(u64, String)>,
     mut report: impl FnMut(Progress),
 ) -> Outcome {
     let layout = LayoutRecord::from(&req.layout);
-    let mut outcome = Outcome::default();
+    let mut outcome = Outcome {
+        run: new_run(),
+        ..Outcome::default()
+    };
+    let run = outcome.run.clone();
     // Sizes as the copy starts: one metadata read per file.
     let sizes: Vec<u64> = plan
         .entries
@@ -305,6 +342,37 @@ fn apply_measured(
         }
         let log = req.dest.join(&e.shoot).join(crate::log::LOG_NAME);
         let dest = req.dest.join(&e.dest);
+        // A symbolic link is copied: moving it would move the link, not the photo.
+        let is_link = fs::symlink_metadata(&e.source).is_ok_and(|m| m.is_symlink());
+        if mode == Mode::Move && !is_link {
+            let line = LogLine::new(Event::Moved, e, &layout)
+                .with_size(sizes[i])
+                .in_run(&run);
+            // Logged first: undo must know about every file that may have moved.
+            match append(&log, &line).map(|()| move_file(&e.source, &dest)) {
+                Err(err) => {
+                    stop = places.stop_reason(&err);
+                    let error = IoReason::from(&err);
+                    let log = log.clone();
+                    outcome
+                        .failed
+                        .push((e.clone(), CopyFailure::Log { log, error }));
+                }
+                Ok(Err(err)) => {
+                    let failed = line.follow_up(Event::Failed).with_error(err.to_string());
+                    let _ = append(&log, &failed);
+                    stop = places.stop_reason(&err);
+                    let failure = CopyFailure::Copy(IoReason::from(&err));
+                    outcome.failed.push((e.clone(), failure));
+                }
+                Ok(Ok(())) => outcome.moved.push(e.clone()),
+            }
+            if log.exists() && !outcome.logs.contains(&log) {
+                outcome.logs.push(log);
+            }
+            file_done(&mut done, &mut report, i);
+            continue;
+        }
         let (before, size) = (done, sizes[i]);
         let mut written = |bytes: u64| {
             report(Progress {
@@ -315,12 +383,16 @@ fn apply_measured(
         let (line, copy_error) = match copy(&e.source, &dest, &mut written) {
             Ok((size, sha256)) => {
                 strip_extended_attributes(&dest);
-                let line = LogLine::new(Event::Copied, e, &layout).with_hash(size, sha256);
+                let line = LogLine::new(Event::Copied, e, &layout)
+                    .with_hash(size, sha256)
+                    .in_run(&run);
                 (line, None)
             }
             Err(err) => {
                 stop = places.stop_reason(&err);
-                let line = LogLine::new(Event::Failed, e, &layout).with_error(err.to_string());
+                let line = LogLine::new(Event::Failed, e, &layout)
+                    .with_error(err.to_string())
+                    .in_run(&run);
                 (line, Some(CopyFailure::Copy(IoReason::from(&err))))
             }
         };
@@ -385,6 +457,15 @@ fn apply_measured(
         }
     }
     outcome
+}
+
+/// A new run id: the time to the microsecond, the process and a counter, so two runs never
+/// share one.
+fn new_run() -> String {
+    static COUNT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let n = COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let time = chrono::Local::now().format("%Y%m%dT%H%M%S%.6f");
+    format!("{time}-{}-{n}", std::process::id())
 }
 
 /// The source and destination folders of a copy, as they were when it started.
@@ -483,7 +564,55 @@ fn is_full(err: &io::Error) -> bool {
 
 /// `apply`, reporting its progress after each file.
 pub fn apply_with_progress(plan: &Plan, req: &Request, progress: impl FnMut(Progress)) -> Outcome {
-    apply_measured(plan, req, copy_verified_with, progress)
+    apply_with(plan, req, Mode::Copy, progress)
+}
+
+/// `apply_with_progress`, copying or moving the files.
+pub fn apply_with(
+    plan: &Plan,
+    req: &Request,
+    mode: Mode,
+    progress: impl FnMut(Progress),
+) -> Outcome {
+    apply_measured(plan, req, mode, copy_verified_with, progress)
+}
+
+/// Rename `src` to the new name `dst`, making its folders, never replacing a file there:
+/// a hard link refuses an existing name atomically, then the old name goes; file systems
+/// without hard links (FAT, exFAT) get a check, then a rename.
+pub fn move_file(src: &Path, dst: &Path) -> io::Result<()> {
+    if let Some(parent) = dst.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    if fs::symlink_metadata(dst).is_ok() {
+        return Err(io::Error::from(io::ErrorKind::AlreadyExists));
+    }
+    match fs::hard_link(src, dst) {
+        Ok(()) => {
+            if let Err(e) = fs::remove_file(src) {
+                // Never two names for one file: the move didn't happen.
+                let _ = fs::remove_file(dst);
+                return Err(e);
+            }
+        }
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists || is_cross_device(&e) => {
+            return Err(e);
+        }
+        Err(_) => {
+            if fs::symlink_metadata(dst).is_ok() {
+                return Err(io::Error::from(io::ErrorKind::AlreadyExists));
+            }
+            fs::rename(src, dst)?;
+        }
+    }
+    sync_dir(dst.parent().unwrap_or(Path::new(".")));
+    sync_dir(src.parent().unwrap_or(Path::new(".")));
+    Ok(())
+}
+
+/// The two paths are on different file systems (EXDEV): no rename between them.
+pub fn is_cross_device(err: &io::Error) -> bool {
+    err.kind() == io::ErrorKind::CrossesDevices
 }
 
 /// Copy `src` to a new file `dst` (never overwriting) with the source's file times, fsync

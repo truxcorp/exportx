@@ -31,6 +31,11 @@ Plan et décisions : `docs/plan/tauri-prototype.md`, `docs/adr/`.
 5. Ensuite, si vous voulez, **Effacer les originaux** (vers la corbeille). **Annuler** les
    remet à partir des copies.
 
+Si la destination est sur le même disque que les fichiers, l'aperçu propose **Déplacer**
+(instantané, sans place en plus) ou **Copier** (les copies prennent autant de place que les
+originaux). Un déplacement s'annule d'un clic ou avec Ctrl+Z ; dans un terminal, `apply --move` affiche la
+commande qui l'annule (`exportpro undo --run <id> <dossier de la séance>`).
+
 Arborescences (`--preset`) :
 - `classique` (par défaut) : `AAAA/MM/JJ/<séance>/p|v/o/<ext>/`
 - `lisible` : `…/photo|video/originaux/<ext>/`
@@ -40,7 +45,9 @@ Les mêmes fonctions dans un terminal :
 ```
 exportpro plan|apply --source <carte> --dest <photos> --shoot <nom> [--prefix p]
                      [--date AAAA-MM-JJ | --split | --no-date] [--preset classique|lisible]
+                     [--move]
 exportpro erase|undo <dossier de la séance>
+exportpro undo --run <id> <dossier de la séance>
 ```
 
 ## Récupérer une version construite

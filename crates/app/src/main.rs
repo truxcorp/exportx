@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use exportpro_app::commands::{
     self, ApplyOutcome, LogOutcome, PlanRequest, PlanResult, PlannedFile, ProgressLine,
 };
+use exportpro_core::apply::Mode;
 use exportpro_core::{Lang, Settings};
 use tauri::ipc::Channel;
 
@@ -49,12 +50,14 @@ async fn plan(req: PlanRequest, lang: String) -> Result<PlanResult, String> {
 async fn apply(
     req: PlanRequest,
     expected: Vec<PlannedFile>,
+    mode: Mode,
     lang: String,
     progress: Channel<ProgressLine>,
 ) -> Result<ApplyOutcome, String> {
     let settings = settings_path()?;
     tauri::async_runtime::spawn_blocking(move || {
-        commands::apply(&req, &expected, Lang::parse(&lang), &settings, |line| {
+        let lang = Lang::parse(&lang);
+        commands::apply_mode(&req, &expected, mode, lang, &settings, |line| {
             let _ = progress.send(line);
         })
     })
@@ -67,6 +70,15 @@ async fn erase(shoots: Vec<PathBuf>, lang: String) -> Result<LogOutcome, String>
     tauri::async_runtime::spawn_blocking(move || commands::erase_in(&shoots, Lang::parse(&lang)))
         .await
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn undo_move(shoots: Vec<PathBuf>, run: String, lang: String) -> Result<LogOutcome, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        commands::undo_move(&shoots, &run, Lang::parse(&lang))
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -100,6 +112,7 @@ fn main() {
             apply,
             erase,
             undo,
+            undo_move,
             open_folder,
             check_folder
         ])

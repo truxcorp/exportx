@@ -1,6 +1,6 @@
 // The screens: render the flow's state (flow.js) and turn clicks into events. The only
 // file that talks to Tauri.
-import { start, next, planRequest, DEFAULT_PREFIX } from "./flow.js";
+import { start, next, planRequest, effect, DEFAULT_PREFIX } from "./flow.js";
 import { t } from "./i18n.js";
 
 const tauri = window.__TAURI__;
@@ -24,6 +24,15 @@ async function init() {
       chooseFolder(state.step, path);
     }
   });
+  // Ctrl+Z (Cmd+Z on a Mac) undoes the last move or erase, like the Undo button.
+  document.addEventListener("keydown", (e) => {
+    const typing = e.target instanceof HTMLInputElement;
+    const undoKey = (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.repeat && e.key.toLowerCase() === "z";
+    if (undoKey && !typing && state.canUndo) {
+      e.preventDefault();
+      send({ type: "undo" });
+    }
+  });
   render();
 }
 
@@ -31,25 +40,31 @@ async function init() {
 async function send(event) {
   notice = "";
   if (event.type === "details" || event.type === "restart") draft = {};
+  const before = state;
   state = next(state, event);
   render();
   try {
-    if (state.step === "planning") {
+    const cmd = effect(before, state);
+    if (cmd === "plan") {
       const result = await invoke("plan", { req: planRequest(state), lang });
       send({ type: "planned", result });
-    } else if (state.step === "copying" && event.type === "confirm") {
+    } else if (cmd === "apply") {
       const progress = new tauri.core.Channel();
       progress.onmessage = (line) => send({ type: "progress", line });
       const outcome = await invoke("apply", {
         req: planRequest(state),
         expected: state.entries,
+        mode: state.mode,
         lang,
         progress,
       });
       send({ type: "copied", outcome });
-    } else if (state.step === "erasing") {
+    } else if (cmd === "erase") {
       send({ type: "erased", outcome: await invoke("erase", { shoots: state.outcome.shoots, lang }) });
-    } else if (state.step === "undoing") {
+    } else if (cmd === "undo_move") {
+      const { shoots, run } = state.outcome;
+      send({ type: "undone", outcome: await invoke("undo_move", { shoots, run, lang }) });
+    } else if (cmd === "undo") {
       send({ type: "undone", outcome: await invoke("undo", { shoots: state.outcome.shoots, lang }) });
     }
   } catch (err) {
@@ -195,7 +210,7 @@ function screen() {
       return el(
         "section",
         {},
-        el("p", { class: "busy" }, t(lang, "copying")),
+        el("p", { class: "busy" }, t(lang, state.mode === "move" ? "moving" : "copying")),
         el("progress", { value, max: max || 1 }),
         el("p", { class: "progress-line" }, p.text || ""),
       );
@@ -207,7 +222,11 @@ function screen() {
     case "erased":
       return erased();
     case "undoing":
-      return el("section", {}, el("p", { class: "busy" }, t(lang, "undoing")));
+      return el(
+        "section",
+        {},
+        el("p", { class: "busy" }, t(lang, state.outcome && state.outcome.moved ? "moving_back" : "undoing")),
+      );
     default:
       return done();
   }
@@ -308,13 +327,47 @@ function days() {
   );
 }
 
+/** The undo shortcut as this computer writes it. */
+const undoKeys = () => (/Mac/.test(navigator.platform) ? "⌘Z" : "Ctrl+Z");
+
+/** On the same disk: move (instant, undoable) or copy (twice the space). */
+function modeChoice() {
+  const option = (mode, key, help, enabled) =>
+    el(
+      "label",
+      { class: enabled ? "option" : "option disabled" },
+      el("input", {
+        type: "radio",
+        name: "mode",
+        value: mode,
+        id: `mode-${mode}`,
+        checked: state.mode === mode,
+        disabled: !enabled,
+        onchange: () => send({ type: "mode", mode }),
+      }),
+      el("span", {}, el("strong", {}, t(lang, key)), " — ", help),
+    );
+  const copyHelp = state.copyFits
+    ? t(lang, "mode_copy_help", { size: state.copySize })
+    : t(lang, "mode_copy_no_room", { size: state.copySize });
+  return el(
+    "fieldset",
+    { class: "mode" },
+    el("legend", {}, t(lang, "mode_same_disk")),
+    option("move", "mode_move", t(lang, "mode_move_help"), true),
+    option("copy", "mode_copy", copyHelp, state.copyFits),
+  );
+}
+
 function preview() {
+  const moving = state.mode === "move";
+  const n = state.entries.filter((e) => !e.already).length;
   return el(
     "section",
     {},
-    el("h2", {}, t(lang, "preview_title")),
-    el("p", {}, t(lang, "preview_count", { n: state.entries.filter((e) => !e.already).length, dest: state.dest })),
-    el("p", { class: "safe" }, t(lang, "preview_safe")),
+    el("h2", {}, t(lang, moving ? "preview_title_move" : "preview_title")),
+    el("p", {}, t(lang, moving ? "preview_count_move" : "preview_count", { n, dest: state.dest })),
+    state.movable ? modeChoice() : el("p", { class: "safe" }, t(lang, "preview_safe")),
     el(
       "table",
       { class: "preview" },
@@ -337,7 +390,7 @@ function preview() {
       "div",
       { class: "actions" },
       button("back", () => send({ type: "back" })),
-      button("copy", () => send({ type: "confirm" }), true, {}, "copy"),
+      button(moving ? "move" : "copy", () => send({ type: "confirm" }), true, {}, "copy"),
     ),
   );
 }
@@ -368,10 +421,19 @@ function result() {
     "section",
     {},
     el("h2", {}, t(lang, "result_title")),
-    el("p", {}, t(lang, "copied", { n: o.copied })),
+    o.moved ? el("p", {}, t(lang, "moved", { n: o.moved })) : "",
+    o.copied || !o.moved ? el("p", {}, t(lang, "copied", { n: o.copied })) : "",
     issues("failed", o.failed),
     el("div", { class: "actions" }, openButtons()),
-    state.canErase
+    state.canUndo
+      ? el(
+          "div",
+          { class: "actions" },
+          button("undo_move", () => send({ type: "undo" }), false, {}, "undo"),
+          button("restart", () => send({ type: "restart" }), true),
+          el("small", { class: "hint" }, t(lang, "undo_hint", { keys: undoKeys() })),
+        )
+      : state.canErase
       ? el(
           "div",
           { class: "question" },
@@ -406,8 +468,10 @@ function done() {
     "section",
     {},
     el("h2", {}, t(lang, "result_title")),
-    state.outcome ? el("p", {}, t(lang, "copied", { n: state.outcome.copied })) : "",
-    o ? el("p", {}, t(lang, "restored", { n: o.done })) : "",
+    state.outcome && (state.outcome.copied || !state.outcome.moved)
+      ? el("p", {}, t(lang, "copied", { n: state.outcome.copied }))
+      : "",
+    o ? el("p", {}, t(lang, state.outcome && state.outcome.moved ? "moved_back" : "restored", { n: o.done })) : "",
     o ? issues("kept", o.kept) : "",
     el("div", { class: "actions" }, state.outcome ? openButtons() : "", button("restart", () => send({ type: "restart" }), true)),
   );

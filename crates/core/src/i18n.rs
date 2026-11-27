@@ -165,6 +165,12 @@ impl Lang {
             (PlanError::CannotRead { path, error }, _) => self.cannot_read(path, error),
             (PlanError::SeveralDays(_), _) => self.several_days().to_owned(),
             (PlanError::NoRoom { needed, free }, _) => self.no_room(*needed, *free),
+            (PlanError::NotMovable, _) => self
+                .pick(
+                    "the destination is on another disk than the source: the files can't be moved, only copied",
+                    "la destination est sur un autre disque que la source : les fichiers ne peuvent pas être déplacés, seulement copiés",
+                )
+                .to_owned(),
             // No count: Windows counts UTF-16 units, which differ from what the user sees.
             (PlanError::PathTooLong { dest, .. }, Lang::En) => format!(
                 "path too long to be moved to a PC later (about {} characters at most): {} (shorten the shoot name, the prefix or the layout)",
@@ -341,6 +347,31 @@ impl Lang {
         }
     }
 
+    /// `2 file(s) moved; to put them back: exportpro undo --run <id> <shoot>...`
+    pub fn moved(self, moved: usize, run: &str, shoots: &[std::path::PathBuf]) -> String {
+        let shoots: Vec<String> = shoots.iter().map(|s| s.display().to_string()).collect();
+        let shoots: Vec<String> = shoots.iter().map(|s| shell_quoted(s)).collect();
+        let undo = format!("exportpro undo --run {run} {}", shoots.join(" "));
+        match self {
+            Lang::En => format!("{moved} file(s) moved; to put them back: {undo}"),
+            Lang::Fr => format!("{moved} fichier(s) déplacé(s) ; pour les remettre : {undo}"),
+        }
+    }
+
+    /// `2 file(s) moved, 1 failed` (and the links copied, if any): the originals that
+    /// moved are no longer in the source, unlike after a copy.
+    pub fn moved_with_failures(self, moved: usize, copied: usize, failed: usize) -> String {
+        let copied_part = match (copied, self) {
+            (0, _) => String::new(),
+            (n, Lang::En) => format!(", {n} copied"),
+            (n, Lang::Fr) => format!(", {n} copié(s)"),
+        };
+        match self {
+            Lang::En => format!("{moved} file(s) moved{copied_part}, {failed} failed"),
+            Lang::Fr => format!("{moved} fichier(s) déplacé(s){copied_part}, {failed} en échec"),
+        }
+    }
+
     pub fn copied_with_failures(self, copied: usize, failed: usize) -> String {
         match self {
             Lang::En => {
@@ -361,6 +392,10 @@ impl Lang {
 
     pub fn erased(self) -> &'static str {
         self.pick("moved to the Trash", "mis à la corbeille")
+    }
+
+    pub fn moved_back(self) -> &'static str {
+        self.pick("moved back", "remis en place")
     }
 
     pub fn restored(self) -> &'static str {
@@ -478,6 +513,26 @@ impl Lang {
             (Keep::Trash(e), Lang::Fr) => format!("la corbeille l'a refusé : {e}"),
             (Keep::CopyBack(e), Lang::En) => format!("copying it back failed: {}", self.io(e)),
             (Keep::CopyBack(e), Lang::Fr) => format!("la recopie a échoué : {}", self.io(e)),
+            (Keep::MoveBack(e), Lang::En) => format!("moving it back failed: {}", self.io(e)),
+            (Keep::MoveBack(e), Lang::Fr) => {
+                format!("le retour à sa place a échoué : {}", self.io(e))
+            }
+            (Keep::NameTaken { path }, Lang::En) => format!(
+                "{} is taken: the moved file stays where it is",
+                path.display()
+            ),
+            (Keep::NameTaken { path }, Lang::Fr) => format!(
+                "{} est pris : le fichier déplacé reste où il est",
+                path.display()
+            ),
+            (Keep::Gone { path }, Lang::En) => format!("{} is no longer there", path.display()),
+            (Keep::Gone { path }, Lang::Fr) => format!("{} n'est plus là", path.display()),
+            (Keep::Changed { path }, Lang::En) => {
+                format!("{} changed since it was moved", path.display())
+            }
+            (Keep::Changed { path }, Lang::Fr) => {
+                format!("{} a changé depuis son déplacement", path.display())
+            }
             (Keep::LogLine { line, problem }, Lang::En) => match problem {
                 LineProblem::Unreadable(e) => format!("line {line}: unreadable ({e}): skipped"),
                 LineProblem::Newer(v) => format!(
@@ -694,5 +749,15 @@ impl Lang {
                 format!("{name} : fichier vide (0 octet), la carte est peut-être abîmée")
             }
         }
+    }
+}
+
+/// `path` as a shell word: as is when plain, else in single quotes.
+fn shell_quoted(path: &str) -> String {
+    let plain = |c: char| c.is_ascii_alphanumeric() || "/._-+:,@%".contains(c);
+    if !path.is_empty() && path.chars().all(plain) {
+        path.to_owned()
+    } else {
+        format!("'{}'", path.replace('\'', r"'\''"))
     }
 }
