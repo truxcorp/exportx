@@ -12,6 +12,7 @@ pub mod plan;
 pub mod progress;
 pub mod scan;
 pub mod settings;
+pub mod update;
 
 pub use apply::{Outcome, apply, apply_with_progress};
 pub use dates::capture_date;
