@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential ca-certificates curl file git jq make pkg-config xz-utils \
       libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev \
       nodejs npm pipx \
+      webkitgtk-webdriver xvfb xauth fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 # Rust: the toolchain pinned in rust-toolchain.toml
@@ -42,6 +43,11 @@ RUN curl -sSfL -o /tmp/gitleaks.tgz \
     && tar -xzf /tmp/trivy.tgz -C /usr/local/bin trivy \
     && rm /tmp/gitleaks.tgz /tmp/trivy.tgz \
     && PIPX_HOME=/opt/pipx PIPX_BIN_DIR=/usr/local/bin pipx install "semgrep==${SEMGREP_VERSION}"
+
+# End-to-end UI tests (ADR 0005): Tauri's WebDriver server, next to WebKitWebDriver.
+ARG TAURI_DRIVER_VERSION=2.1.0
+RUN cargo install --locked tauri-driver --version "$TAURI_DRIVER_VERSION" --root /usr/local \
+    && rm -rf "$CARGO_HOME/registry" && chmod -R a+rwX "$CARGO_HOME"
 
 # The checkout is mounted here by make box; git trusts it whatever its owner. Jobs run as
 # a non-root user (make box maps it to the caller's uid, so files it writes are theirs).

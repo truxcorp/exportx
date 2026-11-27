@@ -7,6 +7,8 @@ export const STRINGS = {
   back: { fr: "Retour", en: "Back" },
   next: { fr: "Continuer", en: "Continue" },
   choose_folder: { fr: "Choisir un dossier…", en: "Choose a folder…" },
+  paste_label: { fr: "Ou collez le chemin du dossier :", en: "Or paste the folder's path:" },
+  paste_placeholder: { fr: "/chemin/du/dossier", en: "/path/to/folder" },
 
   source_title: { fr: "1. Les photos à ranger", en: "1. The photos to sort" },
   source_help: {
@@ -23,6 +25,11 @@ export const STRINGS = {
   prefix_label: { fr: "Début des noms de fichiers", en: "File name prefix" },
   prefix_help: { fr: "Exemple : {prefix}_0001.jpg", en: "Example: {prefix}_0001.jpg" },
   date_label: { fr: "Date (facultatif)", en: "Date (optional)" },
+  date_placeholder: { fr: "AAAA-MM-JJ", en: "YYYY-MM-DD" },
+  invalid_date: {
+    fr: "Cette date n'existe pas : écrivez-la AAAA-MM-JJ, par exemple 2024-03-05.",
+    en: "This date doesn't exist: write it YYYY-MM-DD, e.g. 2024-03-05.",
+  },
   date_help: {
     fr: "Vide : la date de prise de vue des fichiers.",
     en: "Empty: the files' capture date.",

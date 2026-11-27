@@ -1,6 +1,6 @@
 // The screens: render the flow's state (flow.js) and turn clicks into events. The only
 // file that talks to Tauri.
-import { start, next, planRequest } from "./flow.js";
+import { start, next, planRequest, DEFAULT_PREFIX } from "./flow.js";
 import { t } from "./i18n.js";
 
 const tauri = window.__TAURI__;
@@ -8,6 +8,10 @@ const invoke = tauri.core.invoke;
 
 let lang = "en";
 let state = start({});
+// An error to show above the screen (language switch, open folder), cleared on the next event.
+let notice = "";
+// What was typed in the details form but not submitted yet: survives a re-render.
+let draft = {};
 const root = document.getElementById("app");
 
 async function init() {
@@ -25,6 +29,8 @@ async function init() {
 
 /** Apply an event, run what the new step needs, re-render. */
 async function send(event) {
+  notice = "";
+  if (event.type === "details" || event.type === "restart") draft = {};
   state = next(state, event);
   render();
   try {
@@ -77,8 +83,20 @@ function el(tag, attrs = {}, ...children) {
   return node;
 }
 
-const button = (key, onclick, primary = false, vars = {}) =>
-  el("button", { class: primary ? "primary" : "", onclick }, t(lang, key, vars));
+const button = (key, onclick, primary = false, vars = {}, action = key) =>
+  el("button", { class: primary ? "primary" : "", "data-action": action, onclick }, t(lang, key, vars));
+
+/** Run a Tauri command whose failure the user should see. */
+async function tryInvoke(cmd, args) {
+  try {
+    await invoke(cmd, args);
+    return true;
+  } catch (err) {
+    notice = String(err);
+    render();
+    return false;
+  }
+}
 
 function render() {
   const header = el(
@@ -89,31 +107,55 @@ function render() {
       "button",
       {
         class: "link",
+        "data-action": "lang",
         onclick: async () => {
-          lang = lang === "fr" ? "en" : "fr";
-          await invoke("set_lang", { lang });
-          render();
+          const other = lang === "fr" ? "en" : "fr";
+          if (await tryInvoke("set_lang", { lang: other })) {
+            lang = other;
+            notice = "";
+            render();
+          }
         },
       },
       t(lang, "lang_switch"),
     ),
   );
-  root.replaceChildren(header, screen());
+  const shown = notice ? el("p", { id: "notice", class: "error", role: "alert" }, notice) : "";
+  root.replaceChildren(header, shown, screen());
 }
 
 function folderStep(step, titleKey, helpKey, value) {
+  // A pasted path, besides the picker and drag and drop (and the only way tests enter one).
+  const key = `${step}Path`;
+  const path = el("input", {
+    id: `${step}-path`,
+    value: draft[key] ?? value,
+    placeholder: t(lang, "paste_placeholder"),
+    oninput: (e) => {
+      draft[key] = e.target.value;
+    },
+  });
+  const submit = (e) => {
+    e.preventDefault();
+    if (path.value.trim()) send({ type: step, path: path.value.trim() });
+  };
   return el(
     "section",
     { class: "drop" },
     el("h2", {}, t(lang, titleKey)),
     el("p", {}, t(lang, helpKey)),
-    value ? el("p", { class: "path" }, value) : "",
     el(
       "div",
       { class: "actions" },
       step === "dest" ? button("back", () => send({ type: "back" })) : "",
-      button("choose_folder", () => pickFolder(step), !value),
-      value && step === "dest" ? button("next", () => send({ type: "dest", path: value }), true) : "",
+      button("choose_folder", () => pickFolder(step), !value, {}, `${step}-pick`),
+    ),
+    el(
+      "form",
+      { class: "paste", onsubmit: submit },
+      el("label", { for: `${step}-path` }, t(lang, "paste_label")),
+      path,
+      el("button", { id: `${step}-ok`, type: "submit", class: value ? "primary" : "" }, t(lang, "next")),
     ),
   );
 }
@@ -155,16 +197,46 @@ function screen() {
 }
 
 function details() {
-  const shoot = el("input", { id: "shoot", value: state.shoot, required: true, autofocus: true });
-  const prefix = el("input", { id: "prefix", value: state.prefix });
-  const date = el("input", { id: "date", type: "date", value: state.date.day || "" });
+  const keep = (key) => (e) => {
+    draft[key] = e.target.value;
+  };
+  const shoot = el("input", {
+    id: "shoot",
+    value: draft.shoot ?? state.shoot,
+    required: true,
+    autofocus: true,
+    oninput: keep("shoot"),
+  });
+  const example = el(
+    "small",
+    { id: "prefix-example" },
+    t(lang, "prefix_help", { prefix: (draft.prefix ?? state.prefix) || DEFAULT_PREFIX }),
+  );
+  const prefix = el("input", {
+    id: "prefix",
+    value: draft.prefix ?? state.prefix,
+    oninput: (e) => {
+      keep("prefix")(e);
+      example.textContent = t(lang, "prefix_help", { prefix: e.target.value || DEFAULT_PREFIX });
+    },
+  });
+  // A text field, not type=date: WebKitGTK draws an empty date input as today's date.
+  const date = el("input", {
+    id: "date",
+    value: draft.date ?? (state.date.day || ""),
+    placeholder: t(lang, "date_placeholder"),
+    pattern: "\\d{4}-\\d{2}-\\d{2}",
+    inputmode: "numeric",
+    oninput: keep("date"),
+  });
   const preset = el(
     "select",
     { id: "preset" },
     ["classique", "lisible"].map((p) =>
-      el("option", { value: p, selected: p === state.preset }, t(lang, `preset_${p}`)),
+      el("option", { value: p, selected: p === (draft.preset ?? state.preset) }, t(lang, `preset_${p}`)),
     ),
   );
+  preset.addEventListener("change", keep("preset"));
   const submit = (e) => {
     e.preventDefault();
     send({
@@ -179,12 +251,13 @@ function details() {
     "form",
     { onsubmit: submit },
     el("h2", {}, t(lang, "details_title")),
-    state.error ? el("p", { class: "error" }, state.error) : "",
+    // A key of i18n.js (checks made on this side) or a message the Rust side translated.
+    state.error ? el("p", { class: "error" }, t(lang, state.error)) : "",
     el("label", { for: "shoot" }, t(lang, "shoot_label")),
     shoot,
     el("label", { for: "prefix" }, t(lang, "prefix_label")),
     prefix,
-    el("small", {}, t(lang, "prefix_help", { prefix: state.prefix })),
+    example,
     el("label", { for: "date" }, t(lang, "date_label")),
     date,
     el("small", {}, t(lang, "date_help")),
@@ -194,7 +267,7 @@ function details() {
       "div",
       { class: "actions" },
       button("back", () => send({ type: "back" })),
-      el("button", { class: "primary", type: "submit" }, t(lang, "next")),
+      el("button", { id: "details-ok", class: "primary", type: "submit" }, t(lang, "next")),
     ),
   );
 }
@@ -209,10 +282,10 @@ function days() {
       "div",
       { class: "choices" },
       state.days.map(([day]) =>
-        button("day_one", () => send({ type: "chooseDay", choice: "one", day }), false, { day }),
+        button("day_one", () => send({ type: "chooseDay", choice: "one", day }), false, { day }, "day-one"),
       ),
-      button("day_each", () => send({ type: "chooseDay", choice: "each" }), true),
-      button("day_none", () => send({ type: "chooseDay", choice: "none" })),
+      button("day_each", () => send({ type: "chooseDay", choice: "each" }), true, {}, "day-each"),
+      button("day_none", () => send({ type: "chooseDay", choice: "none" }), false, {}, "day-none"),
     ),
     el("div", { class: "actions" }, button("back", () => send({ type: "back" }))),
   );
@@ -238,7 +311,7 @@ function preview() {
       "div",
       { class: "actions" },
       button("back", () => send({ type: "back" })),
-      button("copy", () => send({ type: "confirm" }), true),
+      button("copy", () => send({ type: "confirm" }), true, {}, "copy"),
     ),
   );
 }
@@ -255,7 +328,11 @@ function issues(key, list) {
 
 function openButtons() {
   return state.outcome.shoots.map((path) =>
-    el("button", { onclick: () => invoke("open_folder", { path }) }, `${t(lang, "open_folder")} — ${path}`),
+    el(
+      "button",
+      { "data-action": "open-folder", onclick: () => tryInvoke("open_folder", { path }) },
+      `${t(lang, "open_folder")} — ${path}`,
+    ),
   );
 }
 
@@ -273,8 +350,8 @@ function result() {
           "div",
           { class: "question" },
           el("p", {}, t(lang, "erase_question")),
-          button("erase_no", () => send({ type: "erase", yes: false })),
-          button("erase_yes", () => send({ type: "erase", yes: true }), true),
+          button("erase_no", () => send({ type: "erase", yes: false }), false, {}, "erase-no"),
+          button("erase_yes", () => send({ type: "erase", yes: true }), true, {}, "erase-yes"),
         )
       : el("div", { class: "actions" }, button("restart", () => send({ type: "restart" }), true)),
   );

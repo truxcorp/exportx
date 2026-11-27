@@ -170,3 +170,18 @@ test("a new export starts over from the source with the last destination", () =>
   assert.equal(s.dest, "/photos");
   assert.equal(s.prefix, "zz");
 });
+
+test("an impossible or badly written date stays on the details with an error", () => {
+  for (const date of ["2024-02-30", "2024-13-01", "05/03/2024", "2024-3-5"]) {
+    let s = atDetails();
+    s = next(s, { type: "details", shoot: "s", prefix: "txo", date });
+    assert.equal(s.step, "details", date);
+    assert.equal(s.error, "invalid_date", date);
+  }
+});
+
+test("a real date passes, 29 February of a leap year included", () => {
+  let s = atDetails();
+  s = next(s, { type: "details", shoot: "s", prefix: "txo", date: "2024-02-29" });
+  assert.equal(s.step, "planning");
+});

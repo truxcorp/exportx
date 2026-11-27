@@ -13,9 +13,9 @@ ROOTLESS = $(if $(filter podman,$(notdir $(CONTAINER))),$(shell $(CONTAINER) inf
 AS_ME = --user "$$(id -u):$$(id -g)" $(if $(filter true,$(ROOTLESS)),--userns=keep-id)
 # Build output of `make box`; the pre-push hook points it at the main checkout's.
 TARGET_DIR ?= $(CURDIR)/target
-T ?= lint typecheck test-unit security
+T ?= lint typecheck test-unit test-e2e security
 
-.PHONY: lint typecheck test-unit test-integration security hooks image box run ci bundle
+.PHONY: lint typecheck test-unit test-integration test-e2e security hooks image box run ci bundle
 
 ## lint: rustfmt check and clippy (warnings fail)
 lint:
@@ -36,6 +36,11 @@ test-unit:
 ## test-integration: none yet
 test-integration:
 	@echo "SKIP test-integration (none yet)"
+
+## test-e2e: the real app driven through WebDriver under Xvfb (ADR 0005); in the image: make box T=test-e2e
+test-e2e:
+	cargo build -p exportpro-app --locked
+	EXPORTPRO_APP="$${CARGO_TARGET_DIR:-target}/debug/exportpro-app" node --test --test-concurrency=1 e2e/*.test.js
 
 ## security: gitleaks, semgrep, trivy; high or worse fails
 security:

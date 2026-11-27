@@ -4,7 +4,7 @@
 // source → dest → details → planning → (days → planning) → preview → copying → result
 //   → erasing → erased → (undoing) → done
 
-const DEFAULT_PREFIX = "txo";
+export const DEFAULT_PREFIX = "txo";
 const DEFAULT_PRESET = "classique";
 
 /** The first screen, pre-filled with what was remembered from the last copy. */
@@ -37,6 +37,7 @@ export function next(s, e) {
       return s.step === "dest" ? { ...s, dest: e.path, step: "details", error: "" } : s;
     case "details":
       if (s.step !== "details") return s;
+      if (e.date && !isRealDate(e.date)) return { ...s, error: "invalid_date" };
       return {
         ...s,
         shoot: e.shoot,
@@ -99,6 +100,13 @@ export function next(s, e) {
     default:
       return s;
   }
+}
+
+/** `YYYY-MM-DD` naming a day that exists (2024-02-29 yes, 2023-02-29 no). */
+function isRealDate(text) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
+  const d = new Date(`${text}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === text;
 }
 
 function back(s) {

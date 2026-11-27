@@ -13,10 +13,17 @@ concurrency:
 jobs:
   checks:
     runs-on: ${{ fromJSON(vars.RUNNER_LABELS || '"ubuntu-26.04"') }}
-    timeout-minutes: 30             # image build ~6 min when not cached, checks ~1 min
+    timeout-minutes: 40             # image build ~8 min when not cached, checks and e2e ~4 min
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0            # gitleaks scans every commit
           persist-credentials: false
       - run: make ci
+      - name: Screenshots of the app's screens (end-to-end tests)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-screenshots
+          path: target/box/e2e-screenshots/
+          if-no-files-found: ignore
