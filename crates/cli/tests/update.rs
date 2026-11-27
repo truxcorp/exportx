@@ -73,7 +73,10 @@ fn update_check_says_up_to_date_when_no_newer_version() {
 
     assert_ok(&out);
     let text = stdout(&out);
-    assert!(text.contains(&format!("ExportX {VERSION} est à jour")), "{text}");
+    assert!(
+        text.contains(&format!("ExportX {VERSION} est à jour")),
+        "{text}"
+    );
 }
 
 #[test]
