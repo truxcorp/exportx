@@ -597,6 +597,29 @@ impl Lang {
         )
     }
 
+    /// `ExportX 1.2.0 is available: <release page>`
+    pub fn update_available(self, version: &str, page: &str) -> String {
+        match self {
+            Lang::En => format!("ExportX {version} is available: {page}"),
+            Lang::Fr => format!("ExportX {version} est disponible : {page}"),
+        }
+    }
+
+    /// `ExportX 1.1.0 is up to date`
+    pub fn up_to_date(self, version: &str) -> String {
+        match self {
+            Lang::En => format!("ExportX {version} is up to date"),
+            Lang::Fr => format!("ExportX {version} est à jour"),
+        }
+    }
+
+    pub fn update_check_failed(self, why: &str) -> String {
+        match self {
+            Lang::En => format!("could not check for a new version: {why}"),
+            Lang::Fr => format!("impossible de rechercher une nouvelle version : {why}"),
+        }
+    }
+
     pub fn unknown_command(self, command: &str) -> String {
         match self {
             Lang::En => format!("unknown command {command:?}"),

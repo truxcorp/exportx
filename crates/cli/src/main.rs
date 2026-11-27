@@ -8,6 +8,9 @@
 //!   exportx erase|undo <shoot folder>...
 //!   exportx undo --run <id> <shoot folder>...   (puts back what `apply --move` moved)
 //!
+//!   exportx update-check   (is a newer version out? from the app's update endpoint)
+//!   exportx --version
+//!
 //! Every command takes `--lang fr|en`; the default follows LC_ALL, LC_MESSAGES, LANG.
 //!
 //! Exit status: 0 done, 1 error, 2 the files span several days: they are listed, choose
@@ -25,7 +28,9 @@ const USAGE: &str = "usage: exportx plan|apply --source <dir> --dest <dir> --sho
 [--date YYYY-MM-DD | --split | --no-date] [--preset classique|lisible] \
 [--shoot-path <template>] [--file-path <template>] [--move] [--lang fr|en]\n       \
 exportx erase|undo <shoot folder>... [--lang fr|en]\n       \
-exportx undo --run <id> <shoot folder>...   (puts back what `apply --move` moved)";
+exportx undo --run <id> <shoot folder>...   (puts back what `apply --move` moved)\n       \
+exportx update-check   (is a newer version out?)\n       \
+exportx --version";
 
 /// Options that take a value: what follows them is never read as an option.
 const VALUE_OPTIONS: &[&str] = &[
@@ -88,6 +93,11 @@ fn main() -> ExitCode {
             }
         },
         Some(cmd @ ("erase" | "undo")) => run_log_command(cmd, &args[1..], lang),
+        Some("-V" | "--version") => {
+            println!("exportx {}", env!("CARGO_PKG_VERSION"));
+            ExitCode::SUCCESS
+        }
+        Some("update-check") => update_check(lang),
         None | Some("-h" | "--help") => {
             println!("exportx {}", env!("CARGO_PKG_VERSION"));
             println!("{USAGE}");
@@ -97,6 +107,26 @@ fn main() -> ExitCode {
         }
         Some(other) => {
             eprintln!("exportx: {}\n{USAGE}", lang.unknown_command(other));
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Whether a newer release is out (the app's update check, ADR 0007).
+fn update_check(lang: Lang) -> ExitCode {
+    let current = env!("CARGO_PKG_VERSION");
+    match exportpro_core::update::check(&exportpro_core::update::endpoint(), current) {
+        Ok(Some(version)) => {
+            let page = exportpro_core::update::release_page(&version);
+            println!("{}", lang.update_available(&version, &page));
+            ExitCode::SUCCESS
+        }
+        Ok(None) => {
+            println!("{}", lang.up_to_date(current));
+            ExitCode::SUCCESS
+        }
+        Err(why) => {
+            eprintln!("exportx: {}", lang.update_check_failed(&why));
             ExitCode::FAILURE
         }
     }
