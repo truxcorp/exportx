@@ -19,3 +19,8 @@ test("placeholders are filled in", () => {
 test("an unknown language falls back to English", () => {
   assert.equal(t("de", "copied", { n: 1 }), "1 file(s) copied");
 });
+
+test("the prefix field is called a prefix in both languages", () => {
+  assert.equal(t("fr", "prefix_label"), "Préfixe des noms de fichier");
+  assert.equal(t("en", "prefix_label"), "File name prefix");
+});

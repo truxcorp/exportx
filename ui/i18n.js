@@ -22,7 +22,7 @@ export const STRINGS = {
   },
   details_title: { fr: "3. La séance", en: "3. The shoot" },
   shoot_label: { fr: "Nom de la séance", en: "Shoot name" },
-  prefix_label: { fr: "Début des noms de fichiers", en: "File name prefix" },
+  prefix_label: { fr: "Préfixe des noms de fichier", en: "File name prefix" },
   prefix_help: { fr: "Exemple : {prefix}_0001.jpg", en: "Example: {prefix}_0001.jpg" },
   date_label: { fr: "Date (facultatif)", en: "Date (optional)" },
   date_placeholder: { fr: "AAAA-MM-JJ", en: "YYYY-MM-DD" },
