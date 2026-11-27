@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 
 use chrono::NaiveDate;
@@ -76,6 +77,12 @@ pub enum PlanError {
     },
     /// Something already exists at this destination (relative to `Request::dest`).
     Exists(PathBuf),
+    /// A folder or file of the destination can't be read, so numbers or free names
+    /// can't be checked.
+    CannotRead {
+        path: PathBuf,
+        error: String,
+    },
 }
 
 /// Each day the groups fall on (a group's day is its earliest file's), with its file count.
@@ -112,9 +119,11 @@ pub fn plan(groups: &[Group], req: &Request) -> Result<Plan, PlanError> {
             DateChoice::NoDate => None,
         };
         let shoot = shoot_folder(req, date);
-        let n = last_number
-            .entry(shoot.clone())
-            .or_insert_with_key(|folder| highest_number(req, folder, date));
+        if !last_number.contains_key(&shoot) {
+            let highest = highest_number(req, &shoot, date)?;
+            last_number.insert(shoot.clone(), highest);
+        }
+        let n = last_number.get_mut(&shoot).expect("inserted above");
         *n += 1;
         let n = *n;
         let kind = match g.kind {
@@ -149,11 +158,13 @@ pub fn plan(groups: &[Group], req: &Request) -> Result<Plan, PlanError> {
         }
     }
     check_destinations(&entries)?;
-    if let Some(e) = entries
-        .iter()
-        .find(|e| fs::symlink_metadata(req.dest.join(&e.dest)).is_ok())
-    {
-        return Err(PlanError::Exists(e.dest.clone()));
+    for e in &entries {
+        let path = req.dest.join(&e.dest);
+        match fs::symlink_metadata(&path) {
+            Ok(_) => return Err(PlanError::Exists(e.dest.clone())),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {}
+            Err(err) => return Err(cannot_read(&path, &err)),
+        }
     }
     Ok(Plan { entries, edited })
 }
@@ -197,7 +208,11 @@ fn shoot_folder(req: &Request, date: Option<NaiveDate>) -> PathBuf {
 }
 
 /// The highest number already used in `folder`, the shoot folder of `date` (0 if none).
-fn highest_number(req: &Request, folder: &Path, date: Option<NaiveDate>) -> usize {
+fn highest_number(
+    req: &Request,
+    folder: &Path,
+    date: Option<NaiveDate>,
+) -> Result<usize, PlanError> {
     let vars = Vars {
         date,
         shoot: &req.shoot,
@@ -211,23 +226,35 @@ fn highest_number(req: &Request, folder: &Path, date: Option<NaiveDate>) -> usiz
         if let Some(n) = file_name.number_in(name, &vars, kinds) {
             highest = highest.max(n);
         }
-    });
-    highest
+    })?;
+    Ok(highest)
 }
 
-/// Call `f` with the name of every file under `dir` (none if it doesn't exist).
-fn walk(dir: &Path, f: &mut impl FnMut(&str)) {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return;
+/// Call `f` with the name of every file under `dir`; none if `dir` doesn't exist, an
+/// error if a folder can't be read.
+fn walk(dir: &Path, f: &mut impl FnMut(&str)) -> Result<(), PlanError> {
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(cannot_read(dir, &e)),
     };
-    for entry in entries.flatten() {
-        let Ok(kind) = entry.file_type() else {
-            continue;
-        };
+    for entry in entries {
+        let entry = entry.map_err(|e| cannot_read(dir, &e))?;
+        let kind = entry
+            .file_type()
+            .map_err(|e| cannot_read(&entry.path(), &e))?;
         if kind.is_dir() {
-            walk(&entry.path(), f);
+            walk(&entry.path(), f)?;
         } else if let Some(name) = entry.file_name().to_str() {
             f(name);
         }
+    }
+    Ok(())
+}
+
+fn cannot_read(path: &Path, e: &io::Error) -> PlanError {
+    PlanError::CannotRead {
+        path: path.to_path_buf(),
+        error: e.to_string(),
     }
 }

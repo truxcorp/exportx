@@ -81,6 +81,9 @@ impl Lang {
     pub fn plan_error(self, e: &PlanError, source: &Path) -> String {
         match (e, self) {
             (PlanError::NoFiles, _) => self.no_files(source),
+            (PlanError::CannotRead { path, error }, _) => {
+                self.cannot_read(path, &std::io::Error::other(error.clone()))
+            }
             (PlanError::SeveralDays(_), _) => self.several_days().to_owned(),
             (PlanError::Exists(d), Lang::En) => {
                 format!("{} already exists: nothing was planned", d.display())

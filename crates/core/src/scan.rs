@@ -63,11 +63,16 @@ pub fn scan(dir: &Path) -> io::Result<Vec<Group>> {
     let mut groups: Vec<Group> = Vec::new();
     for entry in fs::read_dir(&dir)? {
         let entry = entry?;
-        if !entry.file_type()?.is_file() {
+        // Follows symbolic links: a linked file is copied like the others.
+        if !fs::metadata(entry.path()).is_ok_and(|m| m.is_file()) {
             continue;
         }
         let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
-            continue;
+            // Never leave a file behind without a word: the originals may be erased later.
+            return Err(io::Error::other(format!(
+                "{:?}: this file name isn't valid UTF-8; rename it",
+                entry.file_name().to_string_lossy()
+            )));
         };
         let Some((base, ext)) = split_name(&name) else {
             continue;
