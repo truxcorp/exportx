@@ -40,7 +40,10 @@ originaux). Un déplacement s'annule d'un clic ou avec Ctrl+Z ; dans un terminal
 commande qui l'annule (`exportx undo --run <id> <dossier de la séance>`).
 
 Le bouton **i** liste les formats (vidéos, dates lues) ; **⚙** règle la langue et la recherche
-de nouvelle version au démarrage. `exportx --help` donne les mêmes listes.
+de nouvelle version au démarrage (ou tout de suite). Quand il y en a une, un bandeau propose
+« Mettre à jour et redémarrer » (AppImage, app Mac : la mise à jour est vérifiée avec la clé de
+mise à jour de l'application avant d'être installée) ou, pour un `.deb`, un lien pour la
+télécharger. `exportx --help` donne les mêmes listes.
 
 Arborescences (`--preset`) :
 - `classique` (par défaut) : `AAAA/MM/JJ/<séance>/p|v/o/<ext>/`
@@ -54,6 +57,8 @@ exportx plan|apply --source <carte> --dest <photos> --shoot <nom> [--prefix p]
                      [--move]
 exportx erase|undo <dossier de la séance>
 exportx undo --run <id> <dossier de la séance>
+exportx update-check        # une nouvelle version est-elle sortie ?
+exportx --version
 ```
 
 ## Publier une version
