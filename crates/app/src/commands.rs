@@ -131,7 +131,15 @@ fn previewed_entries(plan: &exportpro_core::Plan, lang: Lang) -> Vec<PlannedFile
         .map(|e| PlannedFile {
             name: e.name.clone(),
             dest: e.dest.to_string_lossy().replace('\\', "/"),
-            note: e.date_unreadable.then(|| lang.date_unreadable(&e.name)),
+            note: {
+                let notes: Vec<String> = e
+                    .date_unreadable
+                    .then(|| lang.date_unreadable(&e.name))
+                    .into_iter()
+                    .chain(e.notes.iter().map(|n| lang.note(&e.name, n)))
+                    .collect();
+                (!notes.is_empty()).then(|| notes.join(" · "))
+            },
             already: false,
         })
         .chain(plan.already.iter().map(|a| PlannedFile {

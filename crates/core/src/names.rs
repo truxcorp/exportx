@@ -14,6 +14,8 @@ pub enum NameProblem {
     TrailingDotOrSpace,
     /// Hidden on macOS and Linux.
     LeadingDot,
+    /// Longer than 255 bytes: no common file system takes it.
+    TooLong,
 }
 
 impl fmt::Display for NameProblem {
@@ -29,6 +31,9 @@ const RESERVED: &[&str] = &["CON", "PRN", "AUX", "NUL"];
 pub fn check_name(name: &str) -> Result<(), NameProblem> {
     if name.is_empty() {
         return Err(NameProblem::Empty);
+    }
+    if name.len() > 255 {
+        return Err(NameProblem::TooLong);
     }
     if let Some(c) = name
         .chars()

@@ -17,6 +17,6 @@ pub use dates::capture_date;
 pub use i18n::Lang;
 pub use layout::{Layout, LayoutError, Template};
 pub use names::{NameProblem, check_name};
-pub use plan::{Already, DateChoice, Entry, Plan, PlanError, Request, days, plan};
+pub use plan::{Already, DateChoice, Entry, Note, Plan, PlanError, Request, days, plan};
 pub use scan::{Group, Kind, SourceFile, scan};
 pub use settings::Settings;

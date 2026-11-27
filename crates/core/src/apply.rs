@@ -31,6 +31,13 @@ pub enum CopyFailure {
     Folder(IoReason),
     /// Not tried: the destination filled up on an earlier file.
     NotCopiedDiskFull,
+    /// Not tried: the source folder disappeared (card removed) on an earlier file.
+    NotCopiedSourceGone,
+    /// Not tried: the destination folder disappeared (disk unplugged) on an earlier file.
+    NotCopiedDestGone,
+    /// Not tried: the card or the disk stopped answering (I/O error, device gone) on an
+    /// earlier file.
+    NotCopiedDeviceGone,
 }
 
 /// Copy every entry of `plan` into `req.dest`, logging each one in its shoot folder's
@@ -244,13 +251,21 @@ pub fn apply_using(
     let layout = LayoutRecord::from(&req.layout);
     let mut outcome = Outcome::default();
     let total = plan.entries.len();
-    // Once the destination is full, trying the other files only wastes time.
-    let mut full = false;
+    // The destination the user chose is made now (if missing), so it can be watched: from
+    // here on, a copy never makes it again.
+    let _ = fs::create_dir_all(&req.dest);
+    let places = Places::new(plan, req);
+    // Once the destination is full or gone, or the card is gone, trying the other files
+    // only wastes time: they get this reason instead.
+    let mut stop: Option<CopyFailure> = None;
     for (i, e) in plan.entries.iter().enumerate() {
-        if full {
-            outcome
-                .failed
-                .push((e.clone(), CopyFailure::NotCopiedDiskFull));
+        // Checked before each copy: an unplugged disk can leave its empty mount-point
+        // folder, which a copy would quietly fill on the computer's own disk.
+        if stop.is_none() && places.dest_gone() {
+            stop = Some(CopyFailure::NotCopiedDestGone);
+        }
+        if let Some(reason) = &stop {
+            outcome.failed.push((e.clone(), reason.clone()));
             progress(i + 1, total);
             continue;
         }
@@ -263,17 +278,24 @@ pub fn apply_using(
                 (line, None)
             }
             Err(err) => {
-                full = is_full(&err);
+                stop = places.stop_reason(&err);
                 let line = LogLine::new(Event::Failed, e, &layout).with_error(err.to_string());
                 (line, Some(CopyFailure::Copy(IoReason::from(&err))))
             }
         };
-        match (append(&log, &line), copy_error) {
+        // No log line into a destination that's gone: writing it would make its folders
+        // again, wherever the path now leads.
+        let logged = if places.dest_gone() {
+            Ok(())
+        } else {
+            append(&log, &line)
+        };
+        match (logged, copy_error) {
             // The copy's own error matters most (the log often fails for the same reason).
             (_, Some(err)) => outcome.failed.push((e.clone(), err)),
             // A copy the log doesn't know about can't be erased or undone: a failure.
             (Err(err), None) => {
-                full = is_full(&err);
+                stop = places.stop_reason(&err);
                 outcome.failed.push((
                     e.clone(),
                     CopyFailure::Log {
@@ -289,9 +311,20 @@ pub fn apply_using(
         }
         progress(i + 1, total);
     }
+    // Edited folders live on the destination: only a full or missing one keeps them away.
+    let destination_down = if places.dest_gone() {
+        Some(CopyFailure::NotCopiedDestGone)
+    } else {
+        stop.clone().filter(|s| {
+            matches!(
+                s,
+                CopyFailure::NotCopiedDiskFull | CopyFailure::NotCopiedDeviceGone
+            )
+        })
+    };
     for dir in &plan.edited {
-        let failure = if full {
-            Some(CopyFailure::NotCopiedDiskFull)
+        let failure = if let Some(reason) = &destination_down {
+            Some(reason.clone())
         } else {
             fs::create_dir_all(req.dest.join(dir))
                 .err()
@@ -305,11 +338,98 @@ pub fn apply_using(
                 shoot: PathBuf::new(),
                 file: PathBuf::new(),
                 date_unreadable: false,
+                notes: Vec::new(),
             };
             outcome.failed.push((e, failure));
         }
     }
     outcome
+}
+
+/// The source and destination folders of a copy, as they were when it started.
+struct Places {
+    source: Option<PathBuf>,
+    source_device: Option<u64>,
+    dest: PathBuf,
+    dest_device: Option<u64>,
+}
+
+impl Places {
+    fn new(plan: &Plan, req: &Request) -> Self {
+        let source = plan
+            .entries
+            .first()
+            .and_then(|e| e.source.parent())
+            .map(Path::to_path_buf);
+        Places {
+            source_device: source.as_deref().and_then(device_of),
+            source,
+            dest_device: device_of(&req.dest),
+            dest: req.dest.clone(),
+        }
+    }
+
+    /// The destination folder is gone, or now on another device (its disk unplugged,
+    /// leaving the mount-point folder on the computer's disk).
+    fn dest_gone(&self) -> bool {
+        !self.dest.exists() || device_of(&self.dest) != self.dest_device
+    }
+
+    /// The card is gone: its folder vanished, changed device, or is now empty (an
+    /// unmounted card leaves its mount-point folder behind).
+    fn source_gone(&self) -> bool {
+        let Some(source) = &self.source else {
+            return false;
+        };
+        !source.exists()
+            || device_of(source) != self.source_device
+            || fs::read_dir(source).is_ok_and(|mut d| d.next().is_none())
+    }
+
+    /// Why no other file should be tried after `err`: the destination full or gone (told
+    /// first: nothing must be written where it was), the card removed, or a device that
+    /// stopped answering while still mounted.
+    fn stop_reason(&self, err: &io::Error) -> Option<CopyFailure> {
+        if is_full(err) {
+            Some(CopyFailure::NotCopiedDiskFull)
+        } else if self.dest_gone() {
+            Some(CopyFailure::NotCopiedDestGone)
+        } else if self.source_gone() {
+            Some(CopyFailure::NotCopiedSourceGone)
+        } else if is_device_gone(err) {
+            Some(CopyFailure::NotCopiedDeviceGone)
+        } else {
+            None
+        }
+    }
+}
+
+/// A device pulled out while still mounted answers I/O errors (EIO), "no such device"
+/// (ENODEV) or "no such device or address" (ENXIO), its folders still in place.
+fn is_device_gone(err: &io::Error) -> bool {
+    #[cfg(unix)]
+    {
+        matches!(err.raw_os_error(), Some(5 | 6 | 19))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = err;
+        false
+    }
+}
+
+/// The device a folder is on (Unix); `None` elsewhere or if it can't be read.
+fn device_of(path: &Path) -> Option<u64> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        fs::metadata(path).ok().map(|m| m.dev())
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        None
+    }
 }
 
 /// The destination has no room left: disk full or the user's quota reached.

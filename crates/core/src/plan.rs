@@ -49,6 +49,18 @@ pub struct Entry {
     pub file: PathBuf,
     /// The metadata library crashed on this file: dated by its file time (to report).
     pub date_unreadable: bool,
+    /// Things to tell the user about this file before copying.
+    pub notes: Vec<Note>,
+}
+
+/// Something worth telling about a file before copying it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Note {
+    /// Its capture date is before 2000-01-02 (a reset camera clock starts at 2000-01-01,
+    /// or earlier) or after tomorrow: the camera's clock may be wrong.
+    SuspiciousDate(NaiveDate),
+    /// The file is empty (0 bytes): often a sign of a damaged card.
+    Empty,
 }
 
 #[derive(Debug, Clone)]
@@ -92,6 +104,16 @@ pub enum PlanError {
     },
     /// Something already exists at this destination (relative to `Request::dest`).
     Exists(PathBuf),
+    /// The path inside the destination is longer than `MAX_PATH_IN_DEST` characters.
+    PathTooLong {
+        dest: PathBuf,
+        len: usize,
+    },
+    /// The file is over 4 GiB and the destination is FAT32.
+    TooBigForFat {
+        name: String,
+        size: u64,
+    },
     /// Every file is already copied into the shoot: their number.
     AllCopied(usize),
     /// Another copy is writing into this shoot folder right now.
@@ -218,6 +240,7 @@ pub fn plan(groups: &[Group], req: &Request) -> Result<Plan, PlanError> {
                 shoot: shoot.clone(),
                 file,
                 date_unreadable: f.date_unreadable,
+                notes: notes_on(f),
             });
         }
     }
@@ -225,6 +248,9 @@ pub fn plan(groups: &[Group], req: &Request) -> Result<Plan, PlanError> {
         return Err(PlanError::AllCopied(already.len()));
     }
     check_destinations(&entries)?;
+    for dir in &edited {
+        check_path(dir)?;
+    }
     for e in &entries {
         let path = req.dest.join(&e.dest);
         match fs::symlink_metadata(&path) {
@@ -239,6 +265,22 @@ pub fn plan(groups: &[Group], req: &Request) -> Result<Plan, PlanError> {
         edited,
         already,
     })
+}
+
+/// What to tell about `f` before copying it: a capture date before 2000-01-02 (a camera
+/// clock never set restarts at 2000-01-01, or earlier) or after tomorrow, an empty file.
+fn notes_on(f: &crate::scan::SourceFile) -> Vec<Note> {
+    let mut notes = Vec::new();
+    let day = f.date.date();
+    let earliest = NaiveDate::from_ymd_opt(2000, 1, 2).expect("a valid date");
+    let tomorrow = chrono::Local::now().date_naive().succ_opt().unwrap_or(day);
+    if day < earliest || day > tomorrow {
+        notes.push(Note::SuspiciousDate(day));
+    }
+    if fs::metadata(&f.path).is_ok_and(|m| m.len() == 0) {
+        notes.push(Note::Empty);
+    }
+    notes
 }
 
 /// The verified copies a shoot folder's log records whose file is still there (none
@@ -312,17 +354,48 @@ fn cached_hash(path: &Path) -> Option<String> {
     Some(hash)
 }
 
+/// The largest file FAT32 can hold (4 GiB less one byte).
+pub const FAT32_MAX: u64 = 4 * 1024 * 1024 * 1024 - 1;
+
+/// Whether a file of `size` bytes can't be stored on a file system of type `fs_type`
+/// (as mountinfo or statfs name it).
+pub fn too_big_for(fs_type: &str, size: u64) -> bool {
+    matches!(fs_type, "vfat" | "msdos" | "fat" | "fat32") && size > FAT32_MAX
+}
+
+/// The longest path inside the destination: room to move a shoot onto a PC later
+/// (Windows stops at 260 characters for a whole path).
+pub const MAX_PATH_IN_DEST: usize = 200;
+
+/// The type of the file system holding `folder` (`vfat`, `exfat`…), where it can be told:
+/// Linux only for now.
+fn fs_type(folder: &Path) -> Option<String> {
+    #[cfg(target_os = "linux")]
+    {
+        let info = fs::read_to_string("/proc/self/mountinfo").ok()?;
+        let real = fs::canonicalize(folder).ok()?;
+        crate::erase::mount_fstype_for(&info, &real)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = folder;
+        None
+    }
+}
+
 /// Room kept on top of the files: the log, the folders, the file system's own blocks.
 pub const ROOM_MARGIN: u64 = 64 * 1024 * 1024;
 
 /// Refuse a plan whose copies can't fit on the destination's disk.
 fn check_room(req: &Request, entries: &[Entry]) -> Result<(), PlanError> {
     let mut needed = ROOM_MARGIN;
+    let mut sizes = Vec::with_capacity(entries.len());
     for e in entries {
         let size = fs::metadata(&e.source)
             .map_err(|err| cannot_read(&e.source, &err))?
             .len();
         needed = needed.saturating_add(size);
+        sizes.push(size);
     }
     // The destination may not exist yet: ask about its nearest existing folder (absolute,
     // so a relative path ends at the current folder, not at "").
@@ -337,6 +410,17 @@ fn check_room(req: &Request, entries: &[Entry]) -> Result<(), PlanError> {
     let free = fs4::available_space(at).map_err(|err| cannot_read(at, &err))?;
     if needed > free {
         return Err(PlanError::NoRoom { needed, free });
+    }
+    if let Some(kind) = fs_type(at)
+        && let Some((e, size)) = entries
+            .iter()
+            .zip(&sizes)
+            .find(|(_, s)| too_big_for(&kind, **s))
+    {
+        return Err(PlanError::TooBigForFat {
+            name: e.name.clone(),
+            size: *size,
+        });
     }
     check_writable(at)?;
     // Shoot folders that already exist (earlier copies) may be read-only on their own.
@@ -371,6 +455,25 @@ fn check_writable(folder: &Path) -> Result<(), PlanError> {
     }
 }
 
+/// Bytes `.part` adds to a file name while it is being copied.
+const PART_SUFFIX_LEN: usize = ".part".len();
+
+/// Every segment of `path` valid everywhere, and the whole path no longer than
+/// `MAX_PATH_IN_DEST`, counted as Windows counts (UTF-16 units).
+fn check_path(path: &Path) -> Result<(), PlanError> {
+    for seg in path.iter() {
+        check(&seg.to_string_lossy())?;
+    }
+    let len = path.to_string_lossy().encode_utf16().count();
+    if len > MAX_PATH_IN_DEST {
+        return Err(PlanError::PathTooLong {
+            dest: path.to_path_buf(),
+            len,
+        });
+    }
+    Ok(())
+}
+
 fn check(name: &str) -> Result<(), PlanError> {
     check_name(name).map_err(|problem| PlanError::InvalidName {
         name: name.to_owned(),
@@ -382,8 +485,14 @@ fn check(name: &str) -> Result<(), PlanError> {
 fn check_destinations(entries: &[Entry]) -> Result<(), PlanError> {
     let mut seen: BTreeMap<String, &Entry> = BTreeMap::new();
     for e in entries {
-        for seg in e.dest.iter() {
-            check(&seg.to_string_lossy())?;
+        check_path(&e.dest)?;
+        // The copy is written as `<name>.part` first: that name must fit too.
+        let name = e.dest.file_name().unwrap_or_default().to_string_lossy();
+        if name.len() + PART_SUFFIX_LEN > 255 {
+            return Err(PlanError::InvalidName {
+                name: name.into_owned(),
+                problem: NameProblem::TooLong,
+            });
         }
         let key = e.dest.to_string_lossy().to_lowercase();
         if let Some(first) = seen.insert(key, e) {

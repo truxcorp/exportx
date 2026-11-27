@@ -188,6 +188,11 @@ fn run(cmd: &str, args: &[String], lang: Lang) -> Result<(), Failure> {
     for e in plan.entries.iter().filter(|e| e.date_unreadable) {
         eprintln!("exportpro: {}", lang.date_unreadable(&e.name));
     }
+    for e in &plan.entries {
+        for n in &e.notes {
+            eprintln!("exportpro: {}", lang.note(&e.name, n));
+        }
+    }
     if cmd == "plan" {
         for e in &plan.entries {
             println!("{} -> {}", e.name, e.dest.display());

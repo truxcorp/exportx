@@ -247,16 +247,7 @@ pub fn mount_source(mountinfo: &str, major: u64, minor: u64) -> Option<String> {
 /// found by mount point in a `/proc/self/mountinfo` text: the longest mount point that
 /// contains `path`.
 pub fn mount_source_for(mountinfo: &str, path: &Path) -> Option<String> {
-    mountinfo
-        .lines()
-        .filter_map(|line| {
-            let (before, after) = line.split_once(" - ")?;
-            let point = unescape_mount(before.split(' ').nth(4)?);
-            let source = after.split(' ').nth(1)?.to_owned();
-            path.starts_with(&point).then_some((point, source))
-        })
-        .max_by_key(|(point, _)| point.components().count())
-        .map(|(_, source)| source)
+    mount_field_for(mountinfo, path, 1)
 }
 
 /// mountinfo writes spaces, tabs, newlines and backslashes as `\040`, `\011`, `\012`,
@@ -268,4 +259,24 @@ fn unescape_mount(field: &str) -> PathBuf {
         .replace("\\012", "\n")
         .replace("\\134", "\\");
     PathBuf::from(field)
+}
+
+/// The file system type (e.g. `vfat`, `exfat`, `ext4`) of the mount holding `path`
+/// (absolute, real), found like `mount_source_for`.
+pub fn mount_fstype_for(mountinfo: &str, path: &Path) -> Option<String> {
+    mount_field_for(mountinfo, path, 0)
+}
+
+/// Field `n` after the ` - ` separator (0: type, 1: source) of the mount holding `path`.
+fn mount_field_for(mountinfo: &str, path: &Path, n: usize) -> Option<String> {
+    mountinfo
+        .lines()
+        .filter_map(|line| {
+            let (before, after) = line.split_once(" - ")?;
+            let point = unescape_mount(before.split(' ').nth(4)?);
+            let field = after.split(' ').nth(n)?.to_owned();
+            path.starts_with(&point).then_some((point, field))
+        })
+        .max_by_key(|(point, _)| point.components().count())
+        .map(|(_, field)| field)
 }

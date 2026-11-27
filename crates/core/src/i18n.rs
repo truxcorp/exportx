@@ -132,6 +132,24 @@ impl Lang {
                 format!("impossible d'écrire {} : {}", log.display(), self.io(error))
             }
             (CopyFailure::Folder(e), _) => self.io(e),
+            (CopyFailure::NotCopiedSourceGone, _) => self
+                .pick(
+                    "not copied: the source folder is gone (card removed?)",
+                    "non copié : le dossier source a disparu (carte retirée ?)",
+                )
+                .to_owned(),
+            (CopyFailure::NotCopiedDestGone, _) => self
+                .pick(
+                    "not copied: the destination is gone (disk unplugged?)",
+                    "non copié : la destination a disparu (disque débranché ?)",
+                )
+                .to_owned(),
+            (CopyFailure::NotCopiedDeviceGone, _) => self
+                .pick(
+                    "not copied: the card or the disk stopped answering",
+                    "non copié : la carte ou le disque ne répond plus",
+                )
+                .to_owned(),
             (CopyFailure::NotCopiedDiskFull, _) => self
                 .pick(
                     "not copied: the destination is full",
@@ -147,6 +165,25 @@ impl Lang {
             (PlanError::CannotRead { path, error }, _) => self.cannot_read(path, error),
             (PlanError::SeveralDays(_), _) => self.several_days().to_owned(),
             (PlanError::NoRoom { needed, free }, _) => self.no_room(*needed, *free),
+            // No count: Windows counts UTF-16 units, which differ from what the user sees.
+            (PlanError::PathTooLong { dest, .. }, Lang::En) => format!(
+                "path too long to be moved to a PC later (about {} characters at most): {} (shorten the shoot name, the prefix or the layout)",
+                crate::plan::MAX_PATH_IN_DEST,
+                dest.display()
+            ),
+            (PlanError::PathTooLong { dest, .. }, Lang::Fr) => format!(
+                "chemin trop long pour être déplacé plus tard sur un PC ({} caractères environ au plus) : {} (raccourcissez le nom de la séance, le préfixe ou l'arborescence)",
+                crate::plan::MAX_PATH_IN_DEST,
+                dest.display()
+            ),
+            (PlanError::TooBigForFat { name, size }, Lang::En) => format!(
+                "{name} ({}) is over 4 GB, the largest file FAT32 can hold, and the destination is FAT32",
+                self.size(*size)
+            ),
+            (PlanError::TooBigForFat { name, size }, Lang::Fr) => format!(
+                "{name} ({}) dépasse 4 Go, la taille maximale d'un fichier en FAT32, le format de la destination",
+                self.size(*size)
+            ),
             (PlanError::AllCopied(n), Lang::En) => {
                 format!("all {n} files are already copied into this shoot: nothing to do")
             }
@@ -233,6 +270,12 @@ impl Lang {
                 .pick(
                     "it ends with a dot or a space",
                     "il finit par un point ou une espace",
+                )
+                .into(),
+            (NameProblem::TooLong, _) => self
+                .pick(
+                    "it is longer than 255 bytes (250 for a file name)",
+                    "il dépasse 255 octets (250 pour un nom de fichier)",
                 )
                 .into(),
             (NameProblem::LeadingDot, _) => self
@@ -575,6 +618,25 @@ impl Lang {
         match self {
             Lang::En => format!("already copied: {name} -> {}", copy.display()),
             Lang::Fr => format!("déjà copié : {name} -> {}", copy.display()),
+        }
+    }
+
+    /// A note about a file, told before the copy.
+    pub fn note(self, name: &str, note: &crate::plan::Note) -> String {
+        use crate::plan::Note;
+        match (note, self) {
+            (Note::SuspiciousDate(d), Lang::En) => {
+                format!("{name}: suspicious capture date ({d}): is the camera's clock right?")
+            }
+            (Note::SuspiciousDate(d), Lang::Fr) => format!(
+                "{name} : date de prise de vue suspecte ({d}) : l'horloge de l'appareil est-elle juste ?"
+            ),
+            (Note::Empty, Lang::En) => {
+                format!("{name}: empty file (0 bytes), the card may be damaged")
+            }
+            (Note::Empty, Lang::Fr) => {
+                format!("{name} : fichier vide (0 octet), la carte est peut-être abîmée")
+            }
         }
     }
 }
