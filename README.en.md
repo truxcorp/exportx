@@ -1,9 +1,12 @@
-# ExportPro
+# ExportX
 
 *[Version française](README.md)*
 
 Copies a camera card's photos and videos into a dated tree, renamed `<prefix>_0001.<ext>`
 in capture order. Then, on request, it moves the originals to the Trash, which can be undone.
+
+Formerly ExportPro: shoots it copied keep their `exportpro.log` (read and continued), and
+its settings are picked up on the first start.
 
 ## Status
 
@@ -25,17 +28,17 @@ Plan and decisions: `docs/plan/tauri-prototype.md`, `docs/adr/`.
    file's capture date (EXIF, QuickTime) is used. If the files span several days, you pick
    one day, or one folder per day.
 4. **Preview** every `original → destination`, then **Copy**. Each copy is checked (size +
-   hash) and written to `exportpro.log` in the shoot folder. Originals are not touched.
+   hash) and written to `exportx.log` in the shoot folder. Originals are not touched.
 5. Then, if you want, **Erase the originals** (to the Trash). **Undo** puts them back from
    the copies.
 
 When the destination is on the same disk as the files, the preview offers **Move** (instant,
 no extra space) or **Copy** (the copies take as much room as the originals). A move is undone
 with one click or Ctrl+Z; in a terminal, `apply --move` prints the command that undoes it
-(`exportpro undo --run <id> <shoot folder>`).
+(`exportx undo --run <id> <shoot folder>`).
 
 The **i** button lists the formats (videos, dates read); **⚙** sets the language and the check
-for a new version at startup. `exportpro --help` gives the same lists.
+for a new version at startup. `exportx --help` gives the same lists.
 
 Tree layouts (`--preset`):
 - `classique` (default): `YYYY/MM/DD/<shoot>/p|v/o/<ext>/`
@@ -44,28 +47,28 @@ Tree layouts (`--preset`):
 The same features from a terminal:
 
 ```
-exportpro plan|apply --source <card> --dest <photos> --shoot <name> [--prefix p]
+exportx plan|apply --source <card> --dest <photos> --shoot <name> [--prefix p]
                      [--date YYYY-MM-DD | --split | --no-date] [--preset classique|lisible]
                      [--move]
-exportpro erase|undo <shoot folder>
-exportpro undo --run <id> <shoot folder>
+exportx erase|undo <shoot folder>
+exportx undo --run <id> <shoot folder>
 ```
 
 ## Getting a build
 
 Builds are kept on the GitHub run, under *Artifacts*.
 
-- **Linux**: Actions → *build* → the latest run on `main` → `exportpro-linux`.
+- **Linux**: Actions → *build* → the latest run on `main` → `exportx-linux`.
 - **macOS (Apple Silicon)**: never runs on its own. Each build uses about 30 of the
   account's included GitHub minutes.
   - Start it: Actions → *build* → *Run workflow* → tick **macos** → *Run workflow*.
     Or from a terminal: `gh workflow run build.yml -f macos=true`.
-  - Download it: the run's `exportpro-macos-arm64` artifact, or
-    `gh run download <run-id> -n exportpro-macos-arm64`.
-  - Install it: open the `.dmg` and drag ExportPro to *Applications*. The app is unsigned,
+  - Download it: the run's `exportx-macos-arm64` artifact, or
+    `gh run download <run-id> -n exportx-macos-arm64`.
+  - Install it: open the `.dmg` and drag ExportX to *Applications*. The app is unsigned,
     so macOS blocks it the first time. Open it once, go to *System Settings > Privacy &
     Security*, then click *Open Anyway*. Or run
-    `xattr -dr com.apple.quarantine /Applications/ExportPro.app`.
+    `xattr -dr com.apple.quarantine /Applications/ExportX.app`.
 
 ## Development
 
