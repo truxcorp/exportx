@@ -250,7 +250,7 @@ test("the information panel lists the formats; the options remember the update c
     await app.screenshot("10-options");
     await app.click("#check-updates");
     // Saved asynchronously: wait for the file rather than read it at once.
-    const file = join(app.home, ".config/exportpro/settings.toml");
+    const file = join(app.home, ".config/exportx/settings.toml");
     const saved = () => (existsSync(file) ? readFileSync(file, "utf8") : "");
     for (let i = 0; i < 50 && !/check_updates = false/.test(saved()); i++) {
       await new Promise((r) => setTimeout(r, 100));

@@ -17,8 +17,8 @@ export async function launch({ lang = "fr_FR.UTF-8", settings = null, configDir 
   const home = mkdtempSync(join(tmpdir(), "exportpro-e2e-"));
   const config = configDir ?? join(home, ".config");
   if (settings) {
-    mkdirSync(join(config, "exportpro"), { recursive: true });
-    writeFileSync(join(config, "exportpro", "settings.toml"), settings);
+    mkdirSync(join(config, "exportx"), { recursive: true });
+    writeFileSync(join(config, "exportx", "settings.toml"), settings);
   }
   const display = `:${nextDisplay++}`;
   const port = nextPort++;
