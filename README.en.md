@@ -2,7 +2,80 @@
 
 *[Version française](README.md)*
 
-Sorts and renames camera photos and videos into:
+Copies a camera card's photos and videos into a dated tree, renamed `<prefix>_0001.<ext>`
+in capture order. Then, on request, it moves the originals to the Trash, which can be undone.
+
+## Status
+
+| Part | State |
+|---|---|
+| Desktop app (Tauri v2, Rust core), FR/EN | MVP done, polish under way |
+| Linux: AppImage, `.deb` | built on every merge to `main` |
+| macOS Apple Silicon: `.dmg` | built only when asked, unsigned, not yet tried on a Mac |
+| Windows, Intel/universal Mac, signing | after the MVP |
+| Original bash script (`ExportPro.command`) | kept, see the end of this file |
+
+Plan and decisions: `docs/plan/tauri-prototype.md`, `docs/adr/`.
+
+## Using the app
+
+1. **Source**: the card or folder (folder picker or drag and drop).
+2. **Destination**: your photo folder (remembered).
+3. **Shoot name**, **prefix** (`txo` by default), and an optional date. With no date, each
+   file's capture date (EXIF, QuickTime) is used. If the files span several days, you pick
+   one day, or one folder per day.
+4. **Preview** every `original → destination`, then **Copy**. Each copy is checked (size +
+   hash) and written to `exportpro.log` in the shoot folder. Originals are not touched.
+5. Then, if you want, **Erase the originals** (to the Trash). **Undo** puts them back from
+   the copies.
+
+Tree layouts (`--preset`):
+- `classique` (default): `YYYY/MM/DD/<shoot>/p|v/o/<ext>/`
+- `lisible`: `…/photo|video/originaux/<ext>/`
+
+The same features from a terminal:
+
+```
+exportpro plan|apply --source <card> --dest <photos> --shoot <name> [--prefix p]
+                     [--date YYYY-MM-DD | --split | --no-date] [--preset classique|lisible]
+exportpro erase|undo <shoot folder>
+```
+
+## Getting a build
+
+Builds are kept on the GitHub run, under *Artifacts*.
+
+- **Linux**: Actions → *build* → the latest run on `main` → `exportpro-linux`.
+- **macOS (Apple Silicon)**: never runs on its own. Each build uses about 30 of the
+  account's included GitHub minutes.
+  - Start it: Actions → *build* → *Run workflow* → tick **macos** → *Run workflow*.
+    Or from a terminal: `gh workflow run build.yml -f macos=true`.
+  - Download it: the run's `exportpro-macos-arm64` artifact, or
+    `gh run download <run-id> -n exportpro-macos-arm64`.
+  - Install it: open the `.dmg` and drag ExportPro to *Applications*. The app is unsigned,
+    so macOS blocks it the first time. Open it once, go to *System Settings > Privacy &
+    Security*, then click *Open Anyway*. Or run
+    `xattr -dr com.apple.quarantine /Applications/ExportPro.app`.
+
+## Development
+
+Checks run on the self-hosted Linux runners (`RUNNER_LABELS` variable). Only the Mac job
+uses a GitHub runner.
+
+```
+make hooks                  # once per clone
+make lint typecheck test-unit
+make ci                     # everything, security included, in the Containerfile image (podman)
+make box T=bundle           # the Linux app: target/box/release/bundle/{appimage,deb}
+make bundle-macos           # on a Mac: target/release/bundle/dmg/*.dmg
+```
+
+---
+
+## Original script: `ExportPro.command` (bash, macOS)
+
+The starting point, still kept and maintained (`old_for_ref/` has the older versions). It sorts
+and renames into:
 
 ```
 <folder>/YYYY/MM/DD/<shoot name>/p/o/<ext>/     photo originals (cr2, jpg, xmp, ...)
@@ -11,61 +84,24 @@ Sorts and renames camera photos and videos into:
 <folder>/YYYY/MM/DD/<shoot name>/v/s/1/<ext>/   empty, one per video type found
 ```
 
-Files become `<prefix>_<n>.<ext>`. Files with the same base name (`IMG_1.CR2` + `IMG_1.JPG`,
-`MVI_1.MOV` + `MVI_1.THM`) get the same number. Numbering follows shooting time. If the shoot
-folder already has files, numbering carries on after them. The date is the earliest file's date.
-Every rename is written to `exportpro.log` in the shoot folder.
+Files become `<prefix>_<n>.<ext>`. Files with the same base name (`IMG_1.CR2` + `IMG_1.JPG`)
+get the same number. Numbering follows shooting time and carries on after files already in
+the shoot folder. The date is the earliest file's date. Every rename goes to `exportpro.log`.
+Unlike the app, the script **moves** the files and does not copy them.
 
-## Running it on a Mac
+**How to use it on a Mac**
 
-1. Copy `ExportPro.command` to the Mac. If the file has lost its execute bit, run
-   `chmod +x ExportPro.command` once.
-2. Double-click it. A Terminal window opens, followed by dialogs that ask for the folder, the
-   shoot name and the file prefix (`txo` by default). A last dialog asks you to confirm.
-3. The first time, macOS may block the file because it was downloaded. On macOS 14 and earlier,
-   right-click it, choose *Open*, then click *Open* again. On macOS 15 and later, double-click
-   it once, then go to *System Settings > Privacy & Security* and click *Open Anyway*. You can
-   also run `xattr -d com.apple.quarantine ExportPro.command` in Terminal.
-4. If the photos are on an SD card or in Desktop/Documents, macOS may ask whether Terminal may
-   access them. Click *Allow*, or the folder will look empty.
+1. Copy `ExportPro.command` to the Mac. If needed, run `chmod +x ExportPro.command` once.
+2. Double-click it. Dialogs ask for the folder, the shoot name and the prefix (`txo` by
+   default), then ask you to confirm.
+3. The first time, macOS may block it. On macOS 14 and earlier, right-click it and choose
+   *Open*. On macOS 15 and later, go to *System Settings > Privacy & Security > Open Anyway*.
+   Or run `xattr -d com.apple.quarantine ExportPro.command`.
+4. For an SD card or Desktop/Documents, allow Terminal's access, or the folder looks empty.
 
-From a terminal you can also run `./ExportPro.command /path/to/folder`. Set
-`EXPORTPRO_NO_GUI=1` to get questions in the terminal instead of dialogs.
+From a terminal: `./ExportPro.command /path/to/folder`. Set `EXPORTPRO_NO_GUI=1` for terminal
+questions instead of dialogs. It always runs in `/bin/bash` 3.2, which every Mac ships, Intel or
+Apple Silicon, even if it's started from zsh. It needs no Python, Rosetta or signing.
 
-### zsh and Apple Silicon
-
-zsh has been the default shell since macOS 10.15 and is the only default on M1 to M5 Macs. That
-does not matter here: the script always runs in `/bin/bash` 3.2, which every Mac still ships.
-Double-click, `./ExportPro.command`, `zsh ExportPro.command`, `sh ExportPro.command` and
-`source ExportPro.command` all hand the work to bash. When sourced, the script returns to your
-shell instead of closing the Terminal window. Nothing depends on the CPU, so Rosetta is not
-needed.
-
-## Why plain bash
-
-`/bin/bash` 3.2 and `osascript` come with every macOS from 10.5 (2007) to today, on both Intel
-and Apple Silicon. Python was removed in macOS 12.3. A compiled C or Rust binary would need a
-universal build, plus signing or a Gatekeeper workaround. This script uses only the stock tools
-(`stat`, `date`, `find`, `sort`, `awk`, `mv`, `xattr`).
-
-## Tests
-
-```
-bash tests/test_exportpro.sh
-podman run --rm -v "$PWD":/w:Z -w /w docker.io/library/bash:3.2 bash tests/test_exportpro.sh
-```
-
-## Desktop app (in progress)
-
-A cross-platform app (Tauri v2, Rust core) is being built next to the script:
-`docs/plan/tauri-prototype.md`. Checks, the same as CI's:
-
-```
-make hooks                  # once per clone
-make lint typecheck test-unit
-make ci                     # everything, security included, in the Containerfile image (podman)
-make box T=bundle           # the Linux app: target/box/release/bundle/{appimage,deb}
-```
-
-The same features in a terminal: `exportpro plan|apply --source <card> --dest <photos> --shoot <name>`,
-then `exportpro erase <shoot folder>` (to the Trash) and `exportpro undo <shoot folder>`.
+Tests: `bash tests/test_exportpro.sh`, or in bash 3.2:
+`podman run --rm -v "$PWD":/w:Z -w /w docker.io/library/bash:3.2 bash tests/test_exportpro.sh`
