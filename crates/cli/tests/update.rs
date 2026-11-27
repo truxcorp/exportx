@@ -95,3 +95,13 @@ fn update_check_fails_without_network() {
         stderr(&out)
     );
 }
+
+#[test]
+fn update_check_and_version_refuse_extra_arguments() {
+    for args in [&["update-check", "--dry-run"][..], &["--version", "foo"][..]] {
+        let out = exportpro_with(&[("EXPORTX_UPDATE_URL", &closed_url())], args);
+
+        assert_eq!(out.status.code(), Some(1), "{args:?}");
+        assert!(stderr(&out).contains("usage"), "{}", stderr(&out));
+    }
+}
