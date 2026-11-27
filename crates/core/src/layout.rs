@@ -246,6 +246,10 @@ pub struct Layout {
     pub shoot: Template,
     /// An original file, relative to the shoot folder.
     pub original: Template,
+    /// Empty folders for edited photos, relative to the shoot folder.
+    pub edited_photo: Vec<Template>,
+    /// Empty folders for edited videos, one set per video extension found.
+    pub edited_video: Vec<Template>,
 }
 
 impl Layout {
@@ -256,6 +260,8 @@ impl Layout {
             video: "v".into(),
             shoot: Template::parse("{yyyy}/{mm}/{dd}/{shoot}").expect("valid preset"),
             original: Template::parse("{kind}/o/{ext}/{prefix}_{n:4}.{ext}").expect("valid preset"),
+            edited_photo: vec![Template::parse("{kind}/s/1/jpg").expect("valid preset")],
+            edited_video: vec![Template::parse("{kind}/s/1/{ext}").expect("valid preset")],
         }
     }
 
@@ -266,6 +272,8 @@ impl Layout {
             video: "video".into(),
             original: Template::parse("{kind}/originaux/{ext}/{prefix}_{n:4}.{ext}")
                 .expect("valid preset"),
+            edited_photo: vec![Template::parse("{kind}/retouches/1/jpg").expect("valid preset")],
+            edited_video: vec![Template::parse("{kind}/retouches/1/{ext}").expect("valid preset")],
             ..Layout::classique()
         }
     }

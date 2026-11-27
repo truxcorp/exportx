@@ -1,8 +1,10 @@
 //! `exportpro`: the core's features in a terminal.
 //!
-//!   exportpro plan --source <dir> --dest <dir> --shoot <name> [--prefix <p>]
+//!   exportpro plan|apply --source <dir> --dest <dir> --shoot <name> [--prefix <p>]
 //!                  [--date YYYY-MM-DD | --split | --no-date]
 //!                  [--preset classique|lisible] [--shoot-path <template>] [--file-path <template>]
+//!
+//!   exportpro erase|undo <shoot folder>...
 //!
 //! Exit status: 0 done, 1 error, 2 the files span several days: they are listed, choose
 //! one with --date or --split.
@@ -11,17 +13,18 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use chrono::NaiveDate;
-use exportpro_core::{DateChoice, Layout, LayoutError, PlanError, Request, Template};
+use exportpro_core::{DateChoice, Layout, LayoutError, Plan, PlanError, Request, Template};
 
 const DEFAULT_PREFIX: &str = "txo";
-const USAGE: &str = "usage: exportpro plan --source <dir> --dest <dir> --shoot <name> [--prefix <p>] \
+const USAGE: &str = "usage: exportpro plan|apply --source <dir> --dest <dir> --shoot <name> [--prefix <p>] \
 [--date YYYY-MM-DD | --split | --no-date] [--preset classique|lisible] \
-[--shoot-path <template>] [--file-path <template>]";
+[--shoot-path <template>] [--file-path <template>]\n       \
+exportpro erase|undo <shoot folder>...";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
-        Some("plan") => match run_plan(&args[1..]) {
+        Some(cmd @ ("plan" | "apply")) => match run(cmd, &args[1..]) {
             Ok(()) => ExitCode::SUCCESS,
             Err(Failure::Error(msg)) => {
                 eprintln!("exportpro: {msg}");
@@ -37,6 +40,7 @@ fn main() -> ExitCode {
                 ExitCode::from(2)
             }
         },
+        Some(cmd @ ("erase" | "undo")) => run_log_command(cmd, &args[1..]),
         None | Some("-h" | "--help") => {
             println!("exportpro {}", env!("CARGO_PKG_VERSION"));
             println!("{USAGE}");
@@ -133,7 +137,91 @@ fn layout(
     Ok(layout)
 }
 
-fn run_plan(args: &[String]) -> Result<(), Failure> {
+fn run(cmd: &str, args: &[String]) -> Result<(), Failure> {
+    let (plan, req) = make_plan(args)?;
+    if cmd == "plan" {
+        for e in &plan.entries {
+            println!("{} -> {}", e.name, e.dest.display());
+        }
+        return Ok(());
+    }
+    let outcome = exportpro_core::apply(&plan, &req);
+    for e in &outcome.copied {
+        println!("{} -> {}", e.name, e.dest.display());
+    }
+    for (e, err) in &outcome.failed {
+        eprintln!(
+            "exportpro: FAILED {} -> {}: {err}",
+            e.name,
+            e.dest.display()
+        );
+    }
+    for log in &outcome.logs {
+        println!("log: {}", log.display());
+    }
+    if outcome.failed.is_empty() {
+        println!(
+            "{} file(s) copied; the originals are untouched",
+            outcome.copied.len()
+        );
+        Ok(())
+    } else {
+        Err(Failure::Error(format!(
+            "{} file(s) copied, {} failed; the originals are untouched",
+            outcome.copied.len(),
+            outcome.failed.len()
+        )))
+    }
+}
+
+/// `exportpro erase|undo <shoot folder>...`
+fn run_log_command(cmd: &str, folders: &[String]) -> ExitCode {
+    if folders.is_empty() {
+        eprintln!("exportpro: {cmd} needs the shoot folder(s) holding exportpro.log\n{USAGE}");
+        return ExitCode::FAILURE;
+    }
+    let mut ok = true;
+    for folder in folders {
+        let folder = PathBuf::from(folder);
+        let result = if cmd == "erase" {
+            exportpro_core::erase::erase(&folder)
+        } else {
+            exportpro_core::erase::undo(&folder)
+        };
+        match result {
+            Ok(outcome) => {
+                let verb = if cmd == "erase" {
+                    "moved to the Trash"
+                } else {
+                    "restored"
+                };
+                for path in &outcome.done {
+                    println!("{verb}: {}", path.display());
+                }
+                for (path, why) in &outcome.kept {
+                    eprintln!("exportpro: kept {}: {why}", path.display());
+                }
+                println!(
+                    "{} file(s) {verb}, {} kept",
+                    outcome.done.len(),
+                    outcome.kept.len()
+                );
+                ok &= outcome.kept.is_empty();
+            }
+            Err(e) => {
+                eprintln!("exportpro: {}: {e}", folder.join("exportpro.log").display());
+                ok = false;
+            }
+        }
+    }
+    if ok {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+fn make_plan(args: &[String]) -> Result<(Plan, Request), Failure> {
     let a = parse_plan(args)?;
     let source = a.source.ok_or("--source is required")?;
     let dest = a.dest.ok_or("--dest is required")?;
@@ -177,8 +265,5 @@ fn run_plan(args: &[String]) -> Result<(), Failure> {
             }
         )),
     })?;
-    for e in &plan.entries {
-        println!("{} -> {}", e.name, e.dest.display());
-    }
-    Ok(())
+    Ok((plan, req))
 }

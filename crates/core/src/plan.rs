@@ -1,6 +1,6 @@
 //! Planning: where each source file goes.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -8,7 +8,7 @@ use chrono::NaiveDate;
 
 use crate::layout::{Layout, Vars};
 use crate::names::{NameProblem, check_name};
-use crate::scan::{Group, Kind};
+use crate::scan::{Group, Kind, VIDEO_EXTS};
 
 /// What the user asked for.
 #[derive(Debug, Clone)]
@@ -39,12 +39,19 @@ pub enum DateChoice {
 pub struct Entry {
     pub name: String,
     pub source: PathBuf,
+    /// `shoot` joined with `file`.
     pub dest: PathBuf,
+    /// The shoot folder, relative to the destination folder: the log goes there.
+    pub shoot: PathBuf,
+    /// The file, relative to the shoot folder.
+    pub file: PathBuf,
 }
 
 #[derive(Debug, Clone)]
 pub struct Plan {
     pub entries: Vec<Entry>,
+    /// Empty folders for edited files, relative to the destination folder.
+    pub edited: BTreeSet<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -97,14 +104,16 @@ pub fn plan(groups: &[Group], req: &Request) -> Result<Plan, PlanError> {
     // Numbering runs per shoot folder: days sharing one folder share one numbering.
     let mut last_number: BTreeMap<PathBuf, usize> = BTreeMap::new();
     let mut entries = Vec::new();
+    let mut edited = BTreeSet::new();
     for g in groups {
         let date = match req.date {
             DateChoice::Given(d) => Some(d),
             DateChoice::Files | DateChoice::EachDay => Some(g.date().date()),
             DateChoice::NoDate => None,
         };
+        let shoot = shoot_folder(req, date);
         let n = last_number
-            .entry(shoot_folder(req, date))
+            .entry(shoot.clone())
             .or_insert_with_key(|folder| highest_number(req, folder, date));
         *n += 1;
         let n = *n;
@@ -121,17 +130,21 @@ pub fn plan(groups: &[Group], req: &Request) -> Result<Plan, PlanError> {
                 ext: &f.ext,
                 n,
             };
-            let dest: PathBuf = req
-                .layout
-                .shoot
-                .expand(&vars)
-                .into_iter()
-                .chain(req.layout.original.expand(&vars))
-                .collect();
+            let file: PathBuf = req.layout.original.expand(&vars).into_iter().collect();
+            let edited_templates = match g.kind {
+                Kind::Photo => &req.layout.edited_photo,
+                Kind::Video if VIDEO_EXTS.contains(&f.ext.as_str()) => &req.layout.edited_video,
+                Kind::Video => &Vec::new(),
+            };
+            for t in edited_templates {
+                edited.insert(shoot.join(t.expand(&vars).into_iter().collect::<PathBuf>()));
+            }
             entries.push(Entry {
                 name: f.name.clone(),
                 source: f.path.clone(),
-                dest,
+                dest: shoot.join(&file),
+                shoot: shoot.clone(),
+                file,
             });
         }
     }
@@ -142,7 +155,7 @@ pub fn plan(groups: &[Group], req: &Request) -> Result<Plan, PlanError> {
     {
         return Err(PlanError::Exists(e.dest.clone()));
     }
-    Ok(Plan { entries })
+    Ok(Plan { entries, edited })
 }
 
 fn check(name: &str) -> Result<(), PlanError> {

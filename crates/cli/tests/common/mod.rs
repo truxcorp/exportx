@@ -13,6 +13,8 @@ pub struct Dirs {
     _tmp: TempDir,
     pub src: PathBuf,
     pub dest: PathBuf,
+    /// A home folder for the test (the Trash lives in it).
+    pub home: PathBuf,
 }
 
 impl Dirs {
@@ -24,12 +26,15 @@ impl Dirs {
         let tmp = tempfile::tempdir().unwrap();
         let src = tmp.path().join(name);
         let dest = tmp.path().join("dest");
+        let home = tmp.path().join("home");
         fs::create_dir_all(&src).unwrap();
         fs::create_dir_all(&dest).unwrap();
+        fs::create_dir_all(&home).unwrap();
         Dirs {
             _tmp: tmp,
             src,
             dest,
+            home,
         }
     }
 }
@@ -76,12 +81,23 @@ pub fn exportpro(args: &[&str]) -> Output {
 
 /// Run `exportpro <args>` with English messages in the time zone `tz` (e.g. "Europe/Paris").
 pub fn exportpro_in_tz(tz: &str, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_exportpro"))
-        .args(args)
-        .env("TZ", tz)
-        .env("LANG", "en_US.UTF-8")
-        .output()
-        .unwrap()
+    exportpro_with(&[("TZ", tz)], args)
+}
+
+/// Run `exportpro <args>` in UTC with English messages and the extra environment `env`.
+pub fn exportpro_with(env: &[(&str, &str)], args: &[&str]) -> Output {
+    exportpro_in(Path::new("."), env, args)
+}
+
+/// Like `exportpro_with`, from the working folder `cwd`.
+pub fn exportpro_in(cwd: &Path, env: &[(&str, &str)], args: &[&str]) -> Output {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_exportpro"));
+    cmd.current_dir(cwd);
+    cmd.args(args).env("TZ", "UTC").env("LANG", "en_US.UTF-8");
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    cmd.output().unwrap()
 }
 
 /// Copy `tests/fixtures/<name>` into `dir`, with modification time `stamp` (UTC).
@@ -96,8 +112,33 @@ pub fn fixture(dir: &Path, name: &str, stamp: &str) {
 
 /// `plan_args(dirs, extra)`: the arguments of `exportpro plan --source <src> --dest <dest> <extra>`.
 pub fn plan_args<'a>(dirs: &'a Dirs, extra: &[&'a str]) -> Vec<&'a str> {
+    command_args("plan", dirs, extra)
+}
+
+/// `exportpro apply --source <src> --dest <dest> <extra>`: plan, then copy.
+pub fn apply(dirs: &Dirs, extra: &[&str]) -> Output {
+    exportpro(&command_args("apply", dirs, extra))
+}
+
+/// Run `exportpro <args>` with the test's home folder (and so its own Trash).
+pub fn exportpro_at_home(dirs: &Dirs, args: &[&str]) -> Output {
+    let home = dirs.home.to_str().unwrap();
+    let data = dirs.home.join(".local/share");
+    exportpro_with(
+        &[("HOME", home), ("XDG_DATA_HOME", data.to_str().unwrap())],
+        args,
+    )
+}
+
+/// The test home's freedesktop Trash `files` folder.
+pub fn trash_files(dirs: &Dirs) -> PathBuf {
+    dirs.home.join(".local/share/Trash/files")
+}
+
+/// The arguments of `exportpro <command> --source <src> --dest <dest> <extra>`.
+pub fn command_args<'a>(command: &'a str, dirs: &'a Dirs, extra: &[&'a str]) -> Vec<&'a str> {
     let mut args = vec![
-        "plan",
+        command,
         "--source",
         dirs.src.to_str().unwrap(),
         "--dest",

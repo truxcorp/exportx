@@ -55,11 +55,13 @@ impl Group {
     }
 }
 
-/// Top-level files of `dir`, hidden files and files without a base name or extension
+/// Top-level files of `dir` (paths made absolute), hidden files and files without a base name or extension
 /// skipped, grouped by lower-case base name and sorted by date, then base name.
 pub fn scan(dir: &Path) -> io::Result<Vec<Group>> {
+    // Absolute, so the log names the originals wherever erase and undo run from.
+    let dir = std::path::absolute(dir)?;
     let mut groups: Vec<Group> = Vec::new();
-    for entry in fs::read_dir(dir)? {
+    for entry in fs::read_dir(&dir)? {
         let entry = entry?;
         if !entry.file_type()?.is_file() {
             continue;
