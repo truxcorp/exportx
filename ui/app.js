@@ -158,7 +158,13 @@ function render() {
   const header = el(
     "header",
     {},
-    el("h1", {}, t(lang, "title")),
+    // The logo drawn for each theme; CSS shows the one matching the system's.
+    el(
+      "h1",
+      { class: "brand" },
+      el("img", { class: "logo-light", src: "brand/exportx-logo-light-theme.svg", alt: t(lang, "title") }),
+      el("img", { class: "logo-dark", src: "brand/exportx-logo-dark-theme.svg", alt: t(lang, "title") }),
+    ),
     el(
       "nav",
       {},
