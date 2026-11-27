@@ -1,7 +1,9 @@
 :root {
   color-scheme: light dark;
-  --accent: #1f4e79;
-  --accent-text: #fff;
+  /* Brand kit: Ink on light backgrounds, Mustard on dark ones. */
+  --accent: #111418;
+  --accent-text: #f4f2ee;
+  --mark: #b86e00; /* Deep mustard: ticks, radios and bars on light */
   --muted: #6b7280;
   --error: #b42318;
   --line: color-mix(in srgb, currentColor 18%, transparent);
@@ -10,7 +12,7 @@
   line-height: 1.45;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --accent: #6aa6dc; --accent-text: #0b1b2b; --error: #f97066; }
+  :root { --accent: #ffb020; --accent-text: #111418; --mark: #ffb020; --error: #f97066; }
 }
 body { margin: 0; }
 main { max-width: 720px; margin: 0 auto; padding: 16px 24px 32px; }
@@ -54,3 +56,11 @@ section.panel h3 { font-size: 0.95rem; margin: 10px 0 0; }
 section.panel p { margin: 4px 0; }
 section.panel .exts { font-family: ui-monospace, monospace; font-size: 0.9rem; }
 label.check { display: flex; gap: 8px; align-items: center; font-weight: normal; }
+h1.brand { margin: 10px 0; line-height: 0; }
+h1.brand img { height: 34px; width: auto; }
+h1.brand .logo-dark { display: none; }
+@media (prefers-color-scheme: dark) {
+  h1.brand .logo-light { display: none; }
+  h1.brand .logo-dark { display: inline; }
+}
+input[type=radio], input[type=checkbox], progress { accent-color: var(--mark); }

@@ -12,8 +12,9 @@ const ELEMENT = "element-6066-11e4-a52e-4f735466cecf";
 let nextPort = 4444;
 let nextDisplay = 90;
 
-/** Start the app for one test. `lang`: the system language ("fr_FR.UTF-8"…). */
-export async function launch({ lang = "fr_FR.UTF-8", settings = null, configDir = null } = {}) {
+/** Start the app for one test. `lang`: the system language ("fr_FR.UTF-8"…); `theme`:
+ * "dark" for a dark desktop theme (GTK, which the web view's prefers-color-scheme follows). */
+export async function launch({ lang = "fr_FR.UTF-8", settings = null, configDir = null, theme = "light" } = {}) {
   const home = mkdtempSync(join(tmpdir(), "exportx-e2e-"));
   const config = configDir ?? join(home, ".config");
   if (settings) {
@@ -33,6 +34,7 @@ export async function launch({ lang = "fr_FR.UTF-8", settings = null, configDir 
     TZ: "UTC",
     WEBKIT_DISABLE_DMABUF_RENDERER: "1",
     LIBGL_ALWAYS_SOFTWARE: "1",
+    GTK_THEME: theme === "dark" ? "Adwaita:dark" : "Adwaita",
   };
   const xvfb = spawn("Xvfb", [display, "-screen", "0", "1024x768x24", "-nolisten", "tcp"], {
     stdio: "ignore",
@@ -99,6 +101,12 @@ class Session {
   async has(css) {
     const r = await call(this.url, "POST", "/elements", { using: "css selector", value: css });
     return r.length > 0;
+  }
+
+  /** Whether the first element matching `css` is shown (not hidden by CSS). */
+  async displayed(css) {
+    const el = await this.find(css);
+    return call(this.url, "GET", `/element/${el.id}/displayed`);
   }
 
   /** Wait until the screen's text contains `text`. */
