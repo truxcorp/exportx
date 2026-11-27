@@ -54,9 +54,17 @@ exportx erase|undo <shoot folder>
 exportx undo --run <id> <shoot folder>
 ```
 
+## Releases
+
+`make release V=1.2.3` (on an up-to-date, clean `main`) tags `v1.2.3` and pushes the tag. The
+*release* workflow then builds the Linux AppImage and `.deb` and the Apple Silicon `.dmg`,
+signs the update files and publishes them on the
+[Releases](https://github.com/truxcorp/exportx/releases) page with `latest.json`, which the
+app's updater reads (ADR 0007). A version like `1.2.3-rc.1` makes a pre-release.
+
 ## Getting a build
 
-Builds are kept on the GitHub run, under *Artifacts*.
+Between releases, builds are kept on the GitHub run, under *Artifacts*.
 
 - **Linux**: Actions → *build* → the latest run on `main` → `exportx-linux`.
 - **macOS (Apple Silicon)**: never runs on its own. Each build uses about 30 of the
