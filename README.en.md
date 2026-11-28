@@ -38,7 +38,9 @@ with one click or Ctrl+Z; in a terminal, `apply --move` prints the command that 
 (`exportx undo --run <id> <shoot folder>`).
 
 The **i** button lists the formats (videos, dates read); **⚙** sets the language and the check
-for a new version at startup. `exportx --help` gives the same lists.
+for a new version at startup (or now). When one is out, a banner offers "Update and restart"
+(AppImage, Mac app: the update is checked against the app's update key before it is
+installed) or, for a `.deb`, a link to download it. `exportx --help` gives the same lists.
 
 Tree layouts (`--preset`):
 - `classique` (default): `YYYY/MM/DD/<shoot>/p|v/o/<ext>/`
@@ -52,6 +54,8 @@ exportx plan|apply --source <card> --dest <photos> --shoot <name> [--prefix p]
                      [--move]
 exportx erase|undo <shoot folder>
 exportx undo --run <id> <shoot folder>
+exportx update-check        # is a newer version out?
+exportx --version
 ```
 
 ## Releases

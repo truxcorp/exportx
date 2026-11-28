@@ -3,7 +3,7 @@
 // result → erase question.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { start, next, planRequest, effect } from "./flow.js";
+import { start, next, planRequest, effect, canUpdate } from "./flow.js";
 
 const entries = [{ name: "a.jpg", dest: "2024/03/05/s/p/o/jpg/txo_0001.jpg" }];
 
@@ -303,4 +303,99 @@ test("the options and information panels open over any step and close again", ()
   s = next(s, { type: "panel", name: "options" });
   assert.equal(s.panel, null, "the same button closes it");
   assert.equal(start({}).checkUpdates, true, "on unless turned off");
+});
+
+// ADR 0007: auto-update, the banner's state.
+const install = { kind: "install", version: "2.0.0" };
+
+test("U1: a found update is offered, and stays offered across steps and a restart", () => {
+  let s = next(atDetails(), { type: "updateChecked", offer: install, manual: false });
+  assert.deepEqual(s.update, install);
+  assert.equal(canUpdate(s), true);
+  s = next(s, { type: "back" });
+  s = next(s, { type: "restart" });
+  assert.deepEqual(s.update, install);
+});
+
+test("U4: a failed startup check shows nothing; a manual one shows why", () => {
+  let s = next(atDetails(), { type: "updateFailed", message: "no network", manual: false });
+  assert.equal(s.update, null);
+  assert.equal(s.updateMessage, "");
+  s = next(s, { type: "updateFailed", message: "no network", manual: true });
+  assert.equal(s.updateMessage, "no network");
+});
+
+test("a manual check with nothing newer says the app is up to date", () => {
+  let s = next(atDetails(), { type: "updateChecked", offer: null, manual: true });
+  assert.equal(s.update, null);
+  assert.equal(s.updateMessage, "up_to_date");
+  s = next(s, { type: "updateChecked", offer: null, manual: false });
+  assert.equal(s.updateMessage, "up_to_date", "a startup check doesn't clear it");
+});
+
+test("U3: a release page link is no install", () => {
+  const link = { kind: "link", version: "2.0.0", page: "https://example/v2.0.0" };
+  const s = next(atDetails(), { type: "updateChecked", offer: link, manual: false });
+  assert.deepEqual(s.update, link);
+  assert.equal(canUpdate(s), false);
+  assert.equal(next(s, { type: "install" }).updating, false);
+});
+
+test("U5: no update while a copy, move or erase runs", () => {
+  let s = atPreview({ movable: false, copy_size: "5 B", copy_fits: true });
+  s = next(s, { type: "updateChecked", offer: install, manual: false });
+  assert.equal(canUpdate(s), true);
+  s = next(s, { type: "confirm" });
+  assert.equal(s.step, "copying");
+  assert.equal(canUpdate(s), false);
+  assert.equal(next(s, { type: "install" }).updating, false, "the event is refused too");
+  s = next(s, { type: "copied", outcome: { copied: 1, moved: 0, failed: [], shoots: ["/p/s"], run: "r" } });
+  assert.equal(canUpdate(s), true);
+  s = next(s, { type: "erase", yes: true });
+  assert.equal(s.step, "erasing");
+  assert.equal(canUpdate(s), false);
+  s = next(s, { type: "erased", outcome: { done: 1, kept: [] } });
+  s = next(s, { type: "undo" });
+  assert.equal(s.step, "undoing");
+  assert.equal(canUpdate(s), false);
+});
+
+test("installing: once, then a failure shows why and allows a retry", () => {
+  let s = next(atDetails(), { type: "updateChecked", offer: install, manual: false });
+  s = next(s, { type: "install" });
+  assert.equal(s.updating, true);
+  assert.equal(canUpdate(s), false, "not twice");
+  s = next(s, { type: "installFailed", message: "bad signature" });
+  assert.equal(s.updating, false);
+  assert.equal(s.updateMessage, "bad signature");
+  assert.equal(canUpdate(s), true);
+});
+
+test("U5, the other way: no copy, erase or undo starts while an update installs", () => {
+  let s = atPreview({ movable: false, copy_size: "5 B", copy_fits: true });
+  s = next(s, { type: "updateChecked", offer: install, manual: false });
+  s = next(s, { type: "install" });
+  assert.equal(next(s, { type: "confirm" }).step, "preview", "no copy");
+
+  let r = atPreview({ movable: false, copy_size: "5 B", copy_fits: true });
+  r = next(r, { type: "confirm" });
+  r = next(r, { type: "copied", outcome: { copied: 1, moved: 0, failed: [], shoots: ["/p/s"], run: "r" } });
+  r = next(r, { type: "updateChecked", offer: install, manual: false });
+  r = next(r, { type: "install" });
+  assert.equal(next(r, { type: "erase", yes: true }).step, "result", "no erase");
+
+  let m = atPreview({ movable: true, copy_size: "5 B", copy_fits: true });
+  m = next(m, { type: "confirm" });
+  m = next(m, { type: "copied", outcome: { copied: 0, moved: 1, failed: [], shoots: ["/p/s"], run: "r" } });
+  m = next(m, { type: "updateChecked", offer: install, manual: false });
+  m = next(m, { type: "install" });
+  assert.equal(next(m, { type: "undo" }).step, "result", "no undo");
+  m = next(m, { type: "installFailed", message: "x" });
+  assert.equal(next(m, { type: "undo" }).step, "undoing", "allowed again once the install failed");
+});
+
+test("a new export clears the last manual check's message", () => {
+  let s = next(atDetails(), { type: "updateChecked", offer: null, manual: true });
+  s = next(s, { type: "restart" });
+  assert.equal(s.updateMessage, "");
 });

@@ -1,6 +1,6 @@
 // The screens: render the flow's state (flow.js) and turn clicks into events. The only
 // file that talks to Tauri.
-import { start, next, planRequest, effect, DEFAULT_PREFIX } from "./flow.js";
+import { start, next, planRequest, effect, canUpdate, DEFAULT_PREFIX } from "./flow.js";
 import { t } from "./i18n.js";
 
 const tauri = window.__TAURI__;
@@ -39,12 +39,34 @@ async function init() {
     }
   });
   render();
+  if (state.checkUpdates) checkForUpdate(false);
+}
+
+/** Ask whether a newer release is out (ADR 0007); `manual`: Options → "Check now". */
+async function checkForUpdate(manual) {
+  try {
+    send({ type: "updateChecked", offer: await invoke("check_update", { lang }), manual });
+  } catch (err) {
+    send({ type: "updateFailed", message: String(err), manual });
+  }
+}
+
+/** Download, verify and install the newer release; the app restarts when it is done. */
+async function installUpdate() {
+  send({ type: "install" });
+  if (!state.updating) return;
+  try {
+    await invoke("install_update", { lang });
+  } catch (err) {
+    send({ type: "installFailed", message: String(err) });
+  }
 }
 
 /** Apply an event, run what the new step needs, re-render. */
 async function send(event) {
   // Opening a panel leaves a notice on screen: it may be what the user wants to check.
-  if (event.type !== "panel" && event.type !== "checkUpdates") notice = "";
+  const keepsNotice = ["panel", "checkUpdates", "updateChecked", "updateFailed", "install", "installFailed"];
+  if (!keepsNotice.includes(event.type)) notice = "";
   if (event.type === "details" || event.type === "restart") draft = {};
   const before = state;
   state = next(state, event);
@@ -120,6 +142,12 @@ function el(tag, attrs = {}, ...children) {
 const button = (key, onclick, primary = false, vars = {}, action = key) =>
   el("button", { class: primary ? "primary" : "", "data-action": action, onclick }, t(lang, key, vars));
 
+/** `b`, disabled while an update installs (the restart would cut its command short). */
+function whenIdle(b) {
+  b.disabled = state.updating;
+  return b;
+}
+
 /** Run a Tauri command whose failure the user should see. */
 async function tryInvoke(cmd, args) {
   try {
@@ -179,7 +207,35 @@ function render() {
   );
   const shown = notice ? el("p", { id: "notice", class: "error", role: "alert" }, notice) : "";
   const panel = state.panel === "info" ? infoPanel() : state.panel === "options" ? optionsPanel() : "";
-  root.replaceChildren(header, shown, panel, screen());
+  root.replaceChildren(header, updateBanner(), shown, panel, screen());
+}
+
+/** The newer release found, and what the last manual check or install said (ADR 0007). */
+function updateBanner() {
+  const message = state.updateMessage
+    ? el(
+        "p",
+        { id: "update-message", class: state.updateMessage === "up_to_date" ? "" : "error", role: "status" },
+        state.updateMessage === "up_to_date" ? t(lang, "up_to_date", { version: info.version }) : state.updateMessage,
+      )
+    : "";
+  if (!state.update) return message;
+  const { kind, version } = state.update;
+  const action =
+    kind === "install"
+      ? el(
+          "button",
+          { class: "primary", "data-action": "update", disabled: !canUpdate(state), onclick: installUpdate },
+          t(lang, state.updating ? "updating" : "update_install"),
+        )
+      : button("update_page", () => tryInvoke("open_release", { version }), true, {}, "release-page");
+  return el(
+    "div",
+    { id: "update", class: "banner" },
+    el("p", {}, t(lang, "update_available", { version })),
+    action,
+    message,
+  );
 }
 
 function closeButton() {
@@ -227,6 +283,11 @@ function optionsPanel() {
     language,
     el("label", { class: "check", for: "check-updates" }, updates, t(lang, "options_updates")),
     el("small", {}, t(lang, "options_updates_help")),
+    el(
+      "div",
+      { class: "actions" },
+      el("button", { id: "check-now", onclick: () => checkForUpdate(true) }, t(lang, "options_check_now")),
+    ),
     el("p", {}, `ExportX ${info.version}`),
     el("div", { class: "actions" }, closeButton()),
   );
@@ -470,7 +531,7 @@ function preview() {
       "div",
       { class: "actions" },
       button("back", () => send({ type: "back" })),
-      button(moving ? "move" : "copy", () => send({ type: "confirm" }), true, {}, "copy"),
+      whenIdle(button(moving ? "move" : "copy", () => send({ type: "confirm" }), true, {}, "copy")),
     ),
   );
 }
@@ -509,7 +570,7 @@ function result() {
       ? el(
           "div",
           { class: "actions" },
-          button("undo_move", () => send({ type: "undo" }), false, {}, "undo"),
+          whenIdle(button("undo_move", () => send({ type: "undo" }), false, {}, "undo")),
           button("restart", () => send({ type: "restart" }), true),
           el("small", { class: "hint" }, t(lang, "undo_hint", { keys: undoKeys() })),
         )
@@ -518,8 +579,8 @@ function result() {
           "div",
           { class: "question" },
           el("p", {}, t(lang, "erase_question")),
-          button("erase_no", () => send({ type: "erase", yes: false }), false, {}, "erase-no"),
-          button("erase_yes", () => send({ type: "erase", yes: true }), true, {}, "erase-yes"),
+          whenIdle(button("erase_no", () => send({ type: "erase", yes: false }), false, {}, "erase-no")),
+          whenIdle(button("erase_yes", () => send({ type: "erase", yes: true }), true, {}, "erase-yes")),
         )
       : el("div", { class: "actions" }, button("restart", () => send({ type: "restart" }), true)),
   );
@@ -536,7 +597,7 @@ function erased() {
     el(
       "div",
       { class: "actions" },
-      state.canUndo ? button("undo", () => send({ type: "undo" })) : "",
+      state.canUndo ? whenIdle(button("undo", () => send({ type: "undo" }))) : "",
       button("restart", () => send({ type: "restart" }), true),
     ),
   );
