@@ -14,8 +14,8 @@ its settings are picked up on the first start.
 |---|---|
 | Desktop app (Tauri v2, Rust core), FR/EN | MVP done, polish under way |
 | Linux: AppImage, `.deb` | built on every merge to `main` |
-| macOS Apple Silicon: `.dmg` | built only when asked, unsigned, not yet tried on a Mac |
-| Windows, Intel/universal Mac, signing | after the MVP |
+| macOS Apple Silicon: `.dmg` | built for every release (and on demand), not Apple-signed, not yet tried on a Mac |
+| Windows, Intel/universal Mac, Apple signing | after the MVP |
 | Original bash script (`ExportPro.command`) | kept, see the end of this file |
 
 Plan and decisions: `docs/plan/tauri-prototype.md`, `docs/adr/`.
@@ -71,8 +71,8 @@ app's updater reads (ADR 0007). A version like `1.2.3-rc.1` makes a pre-release.
 Between releases, builds are kept on the GitHub run, under *Artifacts*.
 
 - **Linux**: Actions → *build* → the latest run on `main` → `exportx-linux`.
-- **macOS (Apple Silicon)**: never runs on its own. Each build uses about 30 of the
-  account's included GitHub minutes.
+- **macOS (Apple Silicon)**: between releases, only when asked (free: the repo is
+  public).
   - Start it: Actions → *build* → *Run workflow* → tick **macos** → *Run workflow*.
     Or from a terminal: `gh workflow run build.yml -f macos=true`.
   - Download it: the run's `exportx-macos-arm64` artifact, or

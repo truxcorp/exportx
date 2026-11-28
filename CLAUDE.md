@@ -14,5 +14,5 @@
 
 ## Current work
 
-Desktop app (Tauri v2, Rust core): the approved plan is `docs/plan/tauri-prototype.md`,
-decisions in `docs/adr/`. Start from the first unmerged slice (`gh pr list --state all`).
+Desktop app ExportX (Tauri v2, Rust core): the MVP plan `docs/plan/tauri-prototype.md` is
+done; decisions in `docs/adr/`. Next steps: its "After the MVP" section.
