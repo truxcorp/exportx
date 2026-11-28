@@ -51,10 +51,11 @@ bundle:
 	npm ci --no-audit --no-fund
 	APPIMAGE_EXTRACT_AND_RUN=1 NO_STRIP=true npx tauri build --bundles appimage,deb
 
-## bundle-macos: the unsigned Mac app (.app, .dmg) for this Mac's architecture, in target/release/bundle (run on macOS)
+## bundle-macos: the Mac app (.app, .dmg), signed ad hoc (no Apple certificate), for this Mac's architecture, in target/release/bundle (run on macOS)
 bundle-macos:
 	npm ci --no-audit --no-fund
 	npx tauri build --ci --bundles app,dmg
+	codesign --verify --deep --strict --verbose=2 target/release/bundle/macos/ExportX.app
 
 ## release: tag main as v$(V) and push the tag; the release workflow builds and publishes it (ADR 0007)
 release:

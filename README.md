@@ -15,7 +15,7 @@ complété), et ses réglages sont repris au premier lancement.
 |---|---|
 | Application de bureau (Tauri v2, cœur en Rust), FR/EN | MVP terminé, finitions en cours |
 | Linux : AppImage, `.deb` | construits à chaque merge sur `main` |
-| macOS Apple Silicon : `.dmg` | construit à chaque version publiée (et sur demande), non signé par Apple, pas encore essayé sur un Mac |
+| macOS Apple Silicon : `.dmg` | construit à chaque version publiée (et sur demande), signé ad hoc (pas de certificat Apple), pas encore essayé sur un Mac |
 | Windows, Mac Intel/universel, signature Apple | après le MVP |
 | Script bash d'origine (`ExportPro.command`) | conservé, voir la fin de ce fichier |
 
@@ -81,9 +81,12 @@ Entre deux versions, les versions construites restent sur l'exécution GitHub, d
   - La télécharger : l'artifact `exportx-macos-arm64` de l'exécution, ou
     `gh run download <run-id> -n exportx-macos-arm64`.
   - L'installer : ouvrez le `.dmg` et glissez ExportX dans *Applications*. L'application
-    n'est pas signée, donc macOS la bloque la première fois. Ouvrez-la une fois, allez dans
-    *Réglages Système > Confidentialité et sécurité*, puis cliquez sur *Ouvrir quand même*.
+    n'a qu'une signature ad hoc (pas de certificat Apple), donc macOS la bloque la première
+    fois (« Apple n'a pas pu vérifier… »). Ouvrez-la une fois, allez dans *Réglages Système >
+    Confidentialité et sécurité*, puis cliquez sur *Ouvrir quand même*.
     Ou lancez `xattr -dr com.apple.quarantine /Applications/ExportX.app`.
+    Si macOS dit « ExportX est endommagé », c'est une version d'avant la signature ad hoc :
+    seule la commande `xattr` ci-dessus l'ouvre.
 
 ## Développement
 

@@ -1,6 +1,6 @@
 name: build
 # Unsigned Linux packages of the desktop app (AppImage, .deb) on every merge to main and
-# on demand, kept as workflow artifacts. An unsigned Apple Silicon .dmg only when asked
+# on demand, kept as workflow artifacts. An Apple Silicon .dmg (ad hoc signed) only when asked
 # (run by hand with macos=true; release.yml builds it for every release). Windows comes after the MVP
 # (docs/plan/tauri-prototype.md). Thin: make builds them in the Containerfile image.
 on:
