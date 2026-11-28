@@ -72,6 +72,8 @@ case "$cmd" in
     APPIMAGE_EXTRACT_AND_RUN=1 NO_STRIP=true npx tauri build --ci --bundles appimage,deb \
       --config crates/app/tauri.release.conf.json
     out="${CARGO_TARGET_DIR:-target}/release/bundle"
+    # Ad hoc signature on the whole bundle: without it macOS calls a download "damaged".
+    codesign --verify --deep --strict --verbose=2 "$out/macos/ExportX.app"
     rm -rf dist && mkdir dist
     take "$out/appimage/ExportX_${version}_amd64.AppImage"
     take "$out/appimage/ExportX_${version}_amd64.AppImage.sig"

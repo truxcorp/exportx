@@ -37,6 +37,9 @@
     ],
     "category": "Photography",
     "shortDescription": "Offload camera photos and videos into a dated tree",
+    "macOS": {
+      "signingIdentity": "-"
+    },
     "linux": {
       "deb": {
         "depends": []
