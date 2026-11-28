@@ -15,8 +15,8 @@ complété), et ses réglages sont repris au premier lancement.
 |---|---|
 | Application de bureau (Tauri v2, cœur en Rust), FR/EN | MVP terminé, finitions en cours |
 | Linux : AppImage, `.deb` | construits à chaque merge sur `main` |
-| macOS Apple Silicon : `.dmg` | construit seulement sur demande, non signé, pas encore essayé sur un Mac |
-| Windows, Mac Intel/universel, signature | après le MVP |
+| macOS Apple Silicon : `.dmg` | construit à chaque version publiée (et sur demande), non signé par Apple, pas encore essayé sur un Mac |
+| Windows, Mac Intel/universel, signature Apple | après le MVP |
 | Script bash d'origine (`ExportPro.command`) | conservé, voir la fin de ce fichier |
 
 Plan et décisions : `docs/plan/tauri-prototype.md`, `docs/adr/`.
@@ -74,8 +74,8 @@ jour de l'application (ADR 0007). Une version comme `1.2.3-rc.1` donne une pré-
 Entre deux versions, les versions construites restent sur l'exécution GitHub, dans *Artifacts*.
 
 - **Linux** : Actions → *build* → la dernière exécution sur `main` → `exportx-linux`.
-- **macOS (Apple Silicon)** : ne se lance jamais tout seul. Chaque construction utilise
-  environ 30 des minutes GitHub incluses dans le compte.
+- **macOS (Apple Silicon)** : entre deux versions, seulement sur demande (gratuit : le
+  dépôt est public).
   - La lancer : Actions → *build* → *Run workflow* → cocher **macos** → *Run workflow*.
     Ou dans un terminal : `gh workflow run build.yml -f macos=true`.
   - La télécharger : l'artifact `exportx-macos-arm64` de l'exécution, ou

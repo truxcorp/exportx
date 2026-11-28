@@ -1,7 +1,7 @@
 name: build
 # Unsigned Linux packages of the desktop app (AppImage, .deb) on every merge to main and
 # on demand, kept as workflow artifacts. An unsigned Apple Silicon .dmg only when asked
-# (run by hand with macos=true; GitHub-hosted macOS minutes count 10x). Windows comes after the MVP
+# (run by hand with macos=true; release.yml builds it for every release). Windows comes after the MVP
 # (docs/plan/tauri-prototype.md). Thin: make builds them in the Containerfile image.
 on:
   push:
@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       macos:
-        description: Also build the Apple Silicon .dmg (GitHub-hosted, ~30 included minutes)
+        description: Also build the Apple Silicon .dmg (GitHub-hosted, free on this public repo)
         type: boolean
         default: false
 permissions:

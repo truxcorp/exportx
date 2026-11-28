@@ -1,7 +1,8 @@
 # Plan: ExportPro desktop app (Tauri v2 MVP)
 
-Status: **approved 2026-11-26**, ADRs 0001–0004 accepted. Heavy work: 5 slices, about 5–7 days.
-Start with slice 1. Read `CLAUDE.md`, `.workflow/rules.md` and the ADRs in `docs/adr/` first.
+Status: **done 2026-11-28**: all 5 slices merged (approved 2026-11-26). The app is now
+called ExportX (`exportx`, `exportx.log`); the ExportPro names below are as planned.
+What's left is under "After the MVP".
 
 ## Goal
 Replace `ExportPro.command` (macOS-only bash) with a small cross-platform desktop app
@@ -76,8 +77,17 @@ their behaviour (`tests/test_exportpro.sh` is the reference).
 | 4 | Tauri app: screens, FR/EN, settings incl. layout presets. `build.yml` builds unsigned Linux AppImage + `.deb` on merge to `main` and on `workflow_dispatch`. Behaviours 13–15. | ~2 d |
 | 5 | Polish: progress, wording, edge cases found while using it. | ~0.5–1 d |
 
-After the MVP: GitHub-hosted macOS (universal `.dmg`) and Windows (`.msi` / NSIS)
-builds, Mac test by the human, then signing / notarization (needs the human's certificates).
+## After the MVP
+Done: Apple Silicon `.dmg` (GitHub-hosted), releases on semver tags with signed update
+files and auto-update (ADR 0007).
+
+Left, in order:
+1. Real tests by the human: an AppImage update from a first `-rc` release, the `.dmg` and
+   its update on a Mac, a few real camera cards.
+2. Fixes from those tests, and the nits left in exportx#8 (no "checking…" state on
+   Check now; updating right after a move drops the in-app Undo).
+3. Windows (`.msi` / NSIS) and Intel/universal Mac builds, then Apple signing /
+   notarization (needs the human's certificates). Each needs its own approved plan.
 
 ## Choices to list under "Decisions for you" in the PRs
 - EXIF dates have no timezone: read as camera-local time. QuickTime dates are UTC:
